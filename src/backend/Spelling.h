@@ -1,0 +1,74 @@
+// How an x86-64 instruction is written down.
+//
+// One instruction stream serves both x86-64 targets. GnuSpelling and
+// MasmSpelling are the whole of what differs between them: operand order,
+// the sigils, and whether the width rides on the mnemonic or on the operand.
+// Anything that is a real difference between Linux and Windows - which
+// registers carry arguments, how much room the caller leaves - is the Abi's
+// business, not this one's, and anything that is a difference of assembler
+// directives belongs to the target class. Keeping the three apart is what
+// stops "Windows" becoming a synonym for "Intel syntax".
+#pragma once
+
+#include <cstdint>
+#include <string>
+
+namespace shalimar {
+
+enum class Reg {
+    Ax, Cx, Dx, Bx, Si, Di, Bp, Sp,
+    R8, R9, R10, R11, R12, R13, R14, R15,
+    Xmm0, Xmm1, Xmm2, Xmm3, Xmm4, Xmm5, Xmm6, Xmm7
+};
+
+class Spelling {
+public:
+    virtual ~Spelling() = default;
+
+    // width is in bytes: 1, 4 or 8. An SSE register ignores it.
+    virtual std::string reg(Reg r, int width) const = 0;
+    virtual std::string imm(int64_t value) const = 0;
+
+    // src is read and dst is written, whichever order the syntax prints them.
+    virtual std::string binary(const char *mnemonic, int width,
+                               const std::string &src, const std::string &dst) const = 0;
+    virtual std::string unary(const char *mnemonic, int width,
+                              const std::string &operand) const = 0;
+    virtual std::string call(const std::string &target) const = 0;
+    virtual std::string ret() const = 0;
+
+protected:
+    // The register file, indexed by Reg, at each of the three widths.
+    static const char *name(Reg r, int width);
+};
+
+class GnuSpelling : public Spelling {
+public:
+    std::string reg(Reg r, int width) const override;
+    std::string imm(int64_t value) const override;
+    std::string binary(const char *mnemonic, int width,
+                       const std::string &src, const std::string &dst) const override;
+    std::string unary(const char *mnemonic, int width,
+                      const std::string &operand) const override;
+    std::string call(const std::string &target) const override;
+    std::string ret() const override;
+
+private:
+    // 'l' on a four-byte mov, 'q' on an eight-byte one. An SSE mnemonic
+    // carries its own width and takes none.
+    static char suffix(int width);
+};
+
+class MasmSpelling : public Spelling {
+public:
+    std::string reg(Reg r, int width) const override;
+    std::string imm(int64_t value) const override;
+    std::string binary(const char *mnemonic, int width,
+                       const std::string &src, const std::string &dst) const override;
+    std::string unary(const char *mnemonic, int width,
+                      const std::string &operand) const override;
+    std::string call(const std::string &target) const override;
+    std::string ret() const override;
+};
+
+}  // namespace shalimar

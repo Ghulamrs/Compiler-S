@@ -1,0 +1,8 @@
+build/
+lib/
+shc
+*.o
+*.s
+*.asm
+tests/out/
+.DS_Store
