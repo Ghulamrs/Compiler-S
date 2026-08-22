@@ -27,6 +27,9 @@ private:
     std::string program_;          // argv[0], for finding the runtime beside it
     bool assemblyOnly_ = false;    // -S
     bool objectOnly_ = false;      // -c
+    // Link the runtime that can be stopped and stepped. It changes
+    // nothing about what is compiled - see docs/DEBUGGING.md.
+    bool debug_ = false;
 
     // False when the arguments did not make sense; the reason has been said.
     bool parseArguments(const std::vector<std::string> &arguments);

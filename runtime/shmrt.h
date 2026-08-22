@@ -37,6 +37,12 @@ void shm_user_main(void);
 // emits it, even when there are none, so the runtime can always call it.
 void shm_init_globals(void);
 
+// What to call each file in a message. Always emitted and called before
+// anything else, so that a session knows the numbering before it is asked for
+// a breakpoint - the numbers depend on which files the compiler was given,
+// which nobody outside it can work out.
+void shm_name_files(void);
+
 // Which statement is executing, and which file it is in. Set once per
 // statement, because a runtime error names the statement containing it rather
 // than the expression: only statements carry a line, and a per-expression one

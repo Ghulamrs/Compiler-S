@@ -1,6 +1,10 @@
 // The runtime's entry point, and the recursion ceiling.
 #include "Internal.h"
 
+#ifdef SHM_DEBUG
+#include "Debug.h"
+#endif
+
 #include <cstdio>
 
 namespace shm {
@@ -37,6 +41,8 @@ public:
         if (total_ > 0) --total_;
     }
 
+    int32_t total() const { return total_; }
+
 private:
     static const int overall = 1024;
     // More functions than any program the language is for will hold. A
@@ -49,6 +55,11 @@ private:
 };
 
 }  // namespace
+
+// Stepping over a call and refusing to recurse for ever are the same question
+// asked twice, so they are answered from the same counter.
+int32_t callDepth() { return Depth::shared().total(); }
+
 }  // namespace shm
 
 extern "C" {
@@ -57,10 +68,16 @@ void shm_begin(void) {
     // Precision is state that outlives a print, so a program starts from the
     // default whatever the last one left set.
     shm::Console::shared().resetPlaces();
+#ifdef SHM_DEBUG
+    shm::Debug::shared().begin();
+#endif
 }
 
 int shm_end(void) {
     shm::Console::shared().flush();
+#ifdef SHM_DEBUG
+    shm::Debug::shared().ending(0);
+#endif
     return 0;
 }
 
@@ -73,6 +90,9 @@ void shm_leave(int32_t id) { shm::Depth::shared().leave(id); }
 }  // extern "C"
 
 int main(void) {
+    // The names first: a session is told the numbering before it is asked
+    // for a breakpoint in it.
+    shm_name_files();
     shm_begin();
     shm_init_globals();
     shm_user_main();

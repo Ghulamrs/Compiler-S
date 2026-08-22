@@ -23,8 +23,11 @@ public:
     int32_t line() const { return line_; }
 
     void name(int32_t unit, const char *file);
-    // Empty for the program's own file, which is never named.
+    // Empty for the program's own file, which is never named in a message -
+    // though it is still recorded, because a session lists every file.
     const char *file() const;
+    const char *nameOf(int32_t unit) const;
+    int32_t named() const { return named_; }
 
 private:
     // More files than five, which is what a project here is expected to hold,
@@ -35,6 +38,7 @@ private:
 
     int32_t unit_ = 0;
     int32_t line_ = 0;
+    int32_t named_ = 0;
     const char *names_[capacity] = {0};
 };
 

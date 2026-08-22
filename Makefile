@@ -49,6 +49,10 @@ SOURCES := \
   src/backend/X86_64Linux.cpp \
   src/backend/X86_64Windows.cpp
 
+# The runtime is built twice from the same sources. The release archive has
+# no debugger code in it at all; the debug one is the same program plus a
+# session that is dormant until the environment arms it. What the compiler
+# emits does not differ between them by a byte - see docs/DEBUGGING.md.
 RUNTIME_SOURCES := \
   runtime/Shortest.cpp \
   runtime/Failure.cpp \
@@ -57,12 +61,16 @@ RUNTIME_SOURCES := \
   runtime/Console.cpp \
   runtime/Runtime.cpp
 
+DEBUG_RUNTIME_SOURCES := $(RUNTIME_SOURCES) runtime/Debug.cpp
+
 OBJECTS := $(patsubst %.cpp,$(BUILD)/%.o,$(SOURCES))
 RUNTIME_OBJECTS := $(patsubst %.cpp,$(BUILD)/%.o,$(RUNTIME_SOURCES))
-DEPENDS := $(OBJECTS:.o=.d) $(RUNTIME_OBJECTS:.o=.d)
+DEBUG_RUNTIME_OBJECTS := $(patsubst %.cpp,$(BUILD)/debug/%.o,$(DEBUG_RUNTIME_SOURCES))
+DEPENDS := $(OBJECTS:.o=.d) $(RUNTIME_OBJECTS:.o=.d) $(DEBUG_RUNTIME_OBJECTS:.o=.d)
 RUNTIME := lib/shmrt-$(TARGET).a
+DEBUG_RUNTIME := lib/shmrt-$(TARGET)-debug.a
 
-all: shc $(RUNTIME)
+all: shc $(RUNTIME) $(DEBUG_RUNTIME)
 
 shc: $(OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJECTS)
@@ -76,6 +84,14 @@ $(BUILD)/%.o: %.cpp
 $(RUNTIME): $(RUNTIME_OBJECTS)
 	@mkdir -p lib
 	$(AR) rcs $@ $(RUNTIME_OBJECTS)
+
+$(BUILD)/debug/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -DSHM_DEBUG=1 -c -o $@ $<
+
+$(DEBUG_RUNTIME): $(DEBUG_RUNTIME_OBJECTS)
+	@mkdir -p lib
+	$(AR) rcs $@ $(DEBUG_RUNTIME_OBJECTS)
 
 test: all
 	./tests/run.sh

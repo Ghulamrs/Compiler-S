@@ -71,7 +71,10 @@ private:
     int reserve();
     void release();
 
-    void generate(Function &function, const std::set<int> &nameFiles = std::set<int>());
+    void generate(Function &function);
+    // A function of nothing but shm_name_file calls, run before the
+    // program so that a session knows what the unit numbers mean.
+    void generateFileNames(const std::set<int> &units);
     void generate(Stmt &statement);
     void generate(Block &body);
     void evaluate(Expr &expr);

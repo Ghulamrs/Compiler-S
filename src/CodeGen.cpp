@@ -35,18 +35,40 @@ void CodeGen::run(Program &program, const std::string &sourceName,
         if (g->unit() > 0) named.insert(g->unit());
     }
 
+    // The file names go in a function of their own, called before anything
+    // else runs. A session has to know the numbering before it can be asked
+    // for a breakpoint in a file, and the numbers depend on which files this
+    // compiler was given.
+    named.insert(0);
+    generateFileNames(named);
+
     Function &initializer = program.initializer();
     initializer.body().clear();
     for (StmtPtr &declaration : program.globals()) {
         initializer.body().push_back(StmtPtr(declaration.release()));
     }
-    generate(initializer, named);
+    generate(initializer);
 
     for (std::unique_ptr<Function> &f : program.functions()) generate(*f);
     emitter_.endModule();
 }
 
-void CodeGen::generate(Function &function, const std::set<int> &nameFiles) {
+void CodeGen::generateFileNames(const std::set<int> &units) {
+    emitter_.beginFunction("shm_name_files");
+    for (int unit : units) {
+        if (static_cast<size_t>(unit) >= units_.size()) continue;
+        const int id = newBytesId();
+        emitter_.defineBytes(id, units_[static_cast<size_t>(unit)] + std::string(1, '\0'));
+        emitter_.loadBytesAddress(id);
+        emitter_.setArg(Slot::Wide, 1);
+        emitter_.loadIntConstant(unit);
+        emitter_.setArg(Slot::Int, 0);
+        emitter_.call("shm_name_file");
+    }
+    emitter_.endFunction(0);
+}
+
+void CodeGen::generate(Function &function) {
     const Prototype &proto = function.proto();
     evaluationBase_ = function.frame().evaluationBase();
     depth_ = 0;
@@ -95,17 +117,6 @@ void CodeGen::generate(Function &function, const std::set<int> &nameFiles) {
         emitter_.loadIntConstant(proto.id);
         emitter_.setArg(Slot::Int, 0);
         emitter_.call("shm_enter");
-    }
-
-    for (int unit : nameFiles) {
-        if (static_cast<size_t>(unit) >= units_.size()) continue;
-        const int id = newBytesId();
-        emitter_.defineBytes(id, units_[static_cast<size_t>(unit)] + std::string(1, '\0'));
-        emitter_.loadBytesAddress(id);
-        emitter_.setArg(Slot::Wide, 1);
-        emitter_.loadIntConstant(unit);
-        emitter_.setArg(Slot::Int, 0);
-        emitter_.call("shm_name_file");
     }
 
     for (StmtPtr &s : function.body()) generate(*s);

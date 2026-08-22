@@ -34,6 +34,8 @@ void Driver::usage() const {
         "  --target=<name>    arm64-darwin | x86_64-linux | x86_64-windows\n"
         "  --runtime=<path>   the runtime archive to link against\n"
         "  --no-search        do not look in the other files beside this one\n"
+        "  --debug            link the runtime a debugger can stop, which\n"
+        "                     changes nothing about what is compiled\n"
         "\n"
         "  A call to a function this file does not define is looked for in the\n"
         "  other Shalimar files beside it, and what is found is compiled in.\n"
@@ -119,7 +121,8 @@ int Driver::shell(const std::string &command) {
 }
 
 std::string Driver::defaultRuntimeObject(const std::string &targetName) const {
-    return directoryOf(program_) + "/lib/shmrt-" + targetName + ".a";
+    return directoryOf(program_) + "/lib/shmrt-" + targetName +
+           (debug_ ? "-debug" : "") + ".a";
 }
 
 bool Driver::parseArguments(const std::vector<std::string> &arguments) {
@@ -137,6 +140,8 @@ bool Driver::parseArguments(const std::vector<std::string> &arguments) {
             runtimeObject_ = a.substr(10);
         } else if (a == "--no-search") {
             search_ = false;
+        } else if (a == "--debug") {
+            debug_ = true;
         } else if (a == "-h" || a == "--help") {
             usage();
             return false;

@@ -1,0 +1,11 @@
+fun <int> = twice(n: int) {
+  int d : n + n
+  return d
+}
+
+fun <> = main() {
+  int a : 1
+  int b : twice(a)
+  ? a b
+  ? twice(b)
+}
