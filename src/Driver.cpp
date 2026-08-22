@@ -20,7 +20,15 @@
 #include <windows.h>
 #else
 #include <dirent.h>
+#include <limits.h>
+#include <unistd.h>
 #endif
+
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
+#include <vector>
 
 namespace shalimar {
 
@@ -137,14 +145,90 @@ static std::string shellQuote(const std::string &path) {
 // writes and .lib is what lib.exe writes, and they are not interchangeable -
 // naming the wrong one gets "cannot open input file", which reads as a missing
 // runtime rather than as a runtime under its other name.
+// Whether a path is there to be read. Small enough to sit here rather than in
+// a header of its own, and the only question asked of it.
+static bool exists(const std::string &path) {
+    std::ifstream file(path.c_str());
+    return file.good();
+}
+
+// Where this program actually is, asked of the machine rather than taken from
+// argv[0].
+//
+// argv[0] is not a path. Started through PATH - which is how an installed
+// compiler is always started - a program is handed a bare name, and the
+// directory of a bare name is ".", so the runtime was looked for in
+// ./lib/shmrt-*.a and a package could never have worked. Started through a
+// symbolic link it is handed the link, which is the other half of the same
+// problem.
+//
+// Three calls, one per platform, and every one of them is the documented way
+// to ask. The fallback is argv[0], for a platform none of these covers.
+static std::string programDirectory(const std::string &argv0) {
+    std::string full;
+
+#if defined(_WIN32)
+    char buffer[MAX_PATH];
+    DWORD wrote = GetModuleFileNameA(NULL, buffer, sizeof buffer);
+    if (wrote > 0 && wrote < sizeof buffer) full.assign(buffer, wrote);
+#elif defined(__APPLE__)
+    uint32_t size = 0;
+    _NSGetExecutablePath(NULL, &size);          // asks how much room it needs
+    std::vector<char> buffer(size + 1, '\0');
+    if (size != 0 && _NSGetExecutablePath(&buffer[0], &size) == 0)
+        full = &buffer[0];
+#else
+    char buffer[4096];
+    ssize_t wrote = readlink("/proc/self/exe", buffer, sizeof buffer - 1);
+    if (wrote > 0) full.assign(buffer, static_cast<size_t>(wrote));
+#endif
+
+    if (full.empty()) full = argv0;
+
+#ifndef _WIN32
+    // Resolved, because what came back may be a symbolic link and the runtime
+    // is beside the *real* file. On a Mac _NSGetExecutablePath hands back the
+    // path the program was launched through, link and all - Apple's own
+    // documentation says to call realpath on it - and a package manager that
+    // exposes its binaries as links into a cellar is the ordinary case, not an
+    // exotic one. Linux's /proc/self/exe is already resolved and does not mind
+    // being asked twice.
+    char resolved[PATH_MAX];
+    if (realpath(full.c_str(), resolved) != NULL) full = resolved;
+#endif
+
+    size_t slash = full.find_last_of("/\\");
+    return slash == std::string::npos ? std::string(".") : full.substr(0, slash);
+}
+
 std::string Driver::defaultRuntimeObject(const std::string &targetName) const {
 #ifdef _WIN32
     const char *extension = ".lib";
 #else
     const char *extension = ".a";
 #endif
-    return directoryOf(program_) + "/lib/shmrt-" + targetName +
-           (debug_ ? "-debug" : "") + extension;
+    const std::string leaf =
+        "/shmrt-" + targetName + (debug_ ? "-debug" : "") + extension;
+    const std::string here = programDirectory(program_);
+
+    // Two layouts, and the compiler should run in both.
+    //
+    // Beside it, which is this repository: shc.exe and lib/ are siblings, and
+    // that is what every suite here relies on.
+    const std::string beside = here + "/lib" + leaf;
+    if (exists(beside)) return beside;
+
+    // One directory up, which is what an install looks like: <prefix>/bin/
+    // holds the compiler and <prefix>/lib/ the runtime, and a package that had
+    // to put its runtime in <prefix>/bin/lib/ to be found would be a package
+    // nobody could read. --runtime= still overrides both.
+    const std::string installed = here + "/../lib" + leaf;
+    if (exists(installed)) return installed;
+
+    // Neither is there. The one beside is named, because that is the layout
+    // somebody working in this repository has and the message should point at
+    // what they were expecting.
+    return beside;
 }
 
 bool Driver::parseArguments(const std::vector<std::string> &arguments) {
