@@ -93,6 +93,22 @@ std::string GnuSpelling::widen32To64(const std::string &src, const std::string &
     return "movslq\t" + src + ", " + dst;
 }
 
+std::string GnuSpelling::loadAddress(const std::string &from, const std::string &dst) const {
+    return "leaq\t" + from + ", " + dst;
+}
+
+std::string GnuSpelling::indirect(Reg base, int) const {
+    return "(" + reg(base, 8) + ")";
+}
+
+// The label owns its line and the bytes follow it.
+std::string GnuSpelling::byteArrayHead() const { return ":\n\t.byte\t"; }
+std::string GnuSpelling::byteDirective() const { return "\t.byte\t"; }
+
+std::string GnuSpelling::dataReference(const std::string &label) const {
+    return label + "(%rip)";
+}
+
 // -------------------------------------------------------------------- MASM
 
 std::string MasmSpelling::reg(Reg r, int width) const {
@@ -132,6 +148,28 @@ std::string MasmSpelling::ret() const { return "ret"; }
 
 std::string MasmSpelling::widen32To64(const std::string &src, const std::string &dst) const {
     return "movsxd\t" + dst + ", " + src;
+}
+
+std::string MasmSpelling::loadAddress(const std::string &from, const std::string &dst) const {
+    return "lea\t" + dst + ", " + from;
+}
+
+std::string MasmSpelling::indirect(Reg base, int width) const {
+    const char *size = width == 8 ? "QWORD" : (width == 1 ? "BYTE" : "DWORD");
+    return std::string(size) + " PTR [" + reg(base, 8) + "]";
+}
+
+// MASM names a byte array with a label and no colon, and the DB has to be on
+// the same line: the directive is what defines the label, so a line holding
+// the name alone is a syntax error rather than a declaration.
+std::string MasmSpelling::byteArrayHead() const { return "\tDB\t"; }
+std::string MasmSpelling::byteDirective() const { return "\tDB\t"; }
+
+// A bare label. 'lea rax, OFFSET x' is not something ml64 accepts; 'lea rax,
+// x' is, and it assembles to the instruction-pointer-relative form that the
+// GNU spelling asks for explicitly.
+std::string MasmSpelling::dataReference(const std::string &label) const {
+    return label;
 }
 
 std::string MasmSpelling::frameSlot(int offset, int width) const {

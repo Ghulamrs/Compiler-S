@@ -166,6 +166,12 @@ public:
     // A real prints to a fixed number of decimal places rather than to the
     // shortest spelling that round trips. Fixed, because a column is read
     // down its digits and '1.0' beside '0.3333333333333333' cannot be.
+    // A char[] is not a grid - it prints as text, inline.
+    void printText(const char *text) {
+        std::printf("%s ", text);
+        lineHasText_ = true;
+    }
+
     void printReal(double value) {
         char text[400];
         if (std::isfinite(value) && (value < 1e15 && value > -1e15)) {
@@ -195,6 +201,46 @@ private:
 
 Console &console() {
     static Console instance;
+    return instance;
+}
+
+// One counter per function plus one for the whole program. The per-function
+// counter is a depth rather than a lifetime tally, and it comes down on the
+// way out however the call ended - otherwise one deep call would poison every
+// later one.
+class Depth {
+public:
+    void enter(int32_t id, int32_t limit, const char *name) {
+        if (total_ >= 1024) fail("Call stack too deep (limit 1024)");
+        if (id >= 0 && id < capacity) {
+            if (perFunction_[id] >= limit) {
+                char message[128];
+                std::snprintf(message, sizeof message,
+                              "Recursion too deep in '%s' (limit %d)", name,
+                              static_cast<int>(limit));
+                fail(message);
+            }
+            ++perFunction_[id];
+        }
+        ++total_;
+    }
+
+    void leave(int32_t id) {
+        if (id >= 0 && id < capacity && perFunction_[id] > 0) --perFunction_[id];
+        if (total_ > 0) --total_;
+    }
+
+private:
+    // More functions than any program the language is for will hold, and a
+    // program with more simply goes uncounted per function - the overall
+    // ceiling still catches it.
+    static const int capacity = 1024;
+    int32_t perFunction_[capacity] = {0};
+    int32_t total_ = 0;
+};
+
+Depth &depth() {
+    static Depth instance;
     return instance;
 }
 
@@ -327,7 +373,15 @@ int32_t shm_loop_real_run(double value, double end, double step) {
     return value >= end ? 1 : 0;
 }
 
+void shm_enter(int32_t id, int32_t limit, const char *name) {
+    depth().enter(id, limit, name);
+}
+
+void shm_leave(int32_t id) { depth().leave(id); }
+
 void shm_print_int(int32_t value) { console().printInt(value); }
+
+void shm_print_text(const char *text) { console().printText(text); }
 
 void shm_print_real(double value) { console().printReal(value); }
 

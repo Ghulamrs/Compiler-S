@@ -39,6 +39,11 @@ public:
     void visit(For &node) override;
     void visit(Break &node) override;
     void visit(Continue &node) override;
+    void visit(Call &node) override;
+    void visit(Return &node) override;
+    void visit(MultiAssign &node) override;
+    void visit(CallStmt &node) override;
+    void visit(StrLit &node) override;
 
     // What a Shalimar function is called once it is a linker symbol.
     // Shalimar's main() is not the program's entry point - the runtime's is -
@@ -70,6 +75,12 @@ private:
     int newLabel() { return nextLabel_++; }
     int nextLabel_ = 0;
 
+    // Byte arrays the module needs that no string literal in the program
+    // asked for - a function's name, for the recursion message. Numbered
+    // above the literals, which the checker numbered from zero.
+    int newBytesId() { return nextBytesId_++; }
+    int nextBytesId_ = 100000;
+
     // Where 'break' and 'continue' go. A stack, because loops nest, and both
     // words bind to the innermost - there are no labels in the language, so
     // neither can leave two loops at once.
@@ -78,6 +89,24 @@ private:
 
     void generateIntLoop(For &node);
     void generateRealLoop(For &node);
+
+    // A call, evaluated and made. Returns the type its value has, or null
+    // when the function declares no outputs.
+    void generateCall(Call &node);
+
+    // Which register in its own file an argument at this position takes.
+    // Microsoft's convention is positional, so spending an integer slot
+    // spends the matching SSE one; System V's and Apple's are not.
+    int registerIndex(const Prototype &proto, size_t position) const;
+
+    // A name is read and written through its slot, unless it is a reference
+    // parameter, in which case the slot holds the caller's address.
+    void readSymbol(const Symbol &symbol);
+    void writeSymbol(const Symbol &symbol);
+
+    // Where a function's epilogue is, so that 'return' is a jump.
+    int exitLabel_ = 0;
+    const Function *current_ = nullptr;
 
     // The accumulator a value of this type occupies, and the slot traffic
     // that goes with it. Asking the type rather than branching at each use is

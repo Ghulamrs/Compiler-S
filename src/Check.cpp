@@ -3,10 +3,33 @@
 namespace shalimar {
 
 bool Checker::check(Program &program) {
+    program_ = &program;
+
+    // Functions are collected before any body is checked, so main() may call
+    // something written after it. A global cannot be used that way and is a
+    // different rule; there are none yet.
+    int id = 0;
+    for (std::unique_ptr<Function> &f : program.functions()) {
+        f->proto().id = id++;
+        if (f->proto().name == "main" && !f->proto().inputs.empty()) {
+            diag_.error(f->proto().line, "main() takes no inputs");
+        }
+    }
+
     // Execution begins at main(), which takes no inputs.
-    if (!program.find("main")) diag_.error(0, "No main() function defined");
+    Function *entry = program.find("main");
+    if (!entry) diag_.error(0, "No main() function defined");
+    else entry->markCalled();
 
     for (std::unique_ptr<Function> &f : program.functions()) check(*f);
+
+    // A function defined and never called is a warning, not an error.
+    for (std::unique_ptr<Function> &f : program.functions()) {
+        if (!f->isCalled()) {
+            diag_.warning(f->proto().line,
+                          "Function '" + f->proto().name + "' is defined but never called");
+        }
+    }
     return !diag_.hasErrors();
 }
 
@@ -14,9 +37,47 @@ void Checker::check(Function &function) {
     function_ = &function;
     scope_.clear();
     scope_.push();
+
+    // Parameters come first and in order, so the backend can spill argument n
+    // into the slot of parameter n without a second table.
+    for (const Param &parameter : function.proto().inputs) {
+        Symbol *symbol = function.declare(parameter.name, parameter.type);
+        if (parameter.byReference) symbol->makeReference();
+        scope_.define(parameter.name, symbol);
+    }
+    if (function.proto().returnsByPointer()) {
+        const int base = function.addHiddenSlot();
+        for (size_t i = 1; i < function.proto().outputs.size(); ++i) function.addHiddenSlot();
+        function.setOutPointerBase(base);
+    } else if (function.proto().outputs.size() == 1) {
+        function.setResultSlot(function.addHiddenSlot());
+    }
+
     for (StmtPtr &s : function.body()) check(*s);
+
+    if (!function.proto().outputs.empty() && !alwaysReturns(function.body())) {
+        diag_.error(function.proto().line,
+                    "'" + function.proto().name + "' must return on every path");
+    }
+
     scope_.pop();
     function_ = nullptr;
+}
+
+// A block returns on every path if its last reachable statement does. An 'if'
+// counts only when it has an else and every branch returns.
+bool Checker::alwaysReturns(const Block &body) {
+    for (const StmtPtr &s : body) {
+        if (dynamic_cast<const Return *>(s.get())) return true;
+        const If *branch = dynamic_cast<const If *>(s.get());
+        if (!branch || !const_cast<If *>(branch)->hasElse()) continue;
+        bool all = true;
+        for (If::Branch &arm : const_cast<If *>(branch)->branches()) {
+            if (!alwaysReturns(arm.body)) { all = false; break; }
+        }
+        if (all && alwaysReturns(const_cast<If *>(branch)->elseBody())) return true;
+    }
+    return false;
 }
 
 void Checker::check(Stmt &statement) {
@@ -196,6 +257,110 @@ void Checker::visit(For &node) {
 
 void Checker::visit(Break &) {}
 void Checker::visit(Continue &) {}
+
+void Checker::visit(StrLit &node) {
+    node.setId(strings_++);
+    node.setType(Type::arrayOf(Type::charType()));
+}
+
+void Checker::visit(Call &node) {
+    Function *callee = program_->find(node.callee());
+    if (!callee) {
+        diag_.error(line_, "Unknown function '" + node.callee() + "'");
+        for (ExprPtr &argument : node.arguments()) typeOf(argument);
+        return;
+    }
+    callee->markCalled();
+    const Prototype &proto = callee->proto();
+    node.resolve(&proto);
+
+    // Argument count is checked exactly. Too few and too many are both
+    // errors; in 2.x a surplus was evaluated and dropped with a warning, so a
+    // call with its arguments in the wrong order still ran.
+    if (node.arguments().size() != proto.inputs.size()) {
+        diag_.error(line_, "'" + node.callee() + "' takes " +
+                               std::to_string(proto.inputs.size()) + " arguments");
+    }
+
+    for (size_t i = 0; i < node.arguments().size(); ++i) {
+        // Each argument waits in a slot while the next is evaluated, so the
+        // frame has to be deep enough for all of them at once.
+        deeper();
+        const Type *given = typeOf(node.arguments()[i]);
+        if (i >= proto.inputs.size() || !given) continue;
+        const Param &parameter = proto.inputs[i];
+
+        if (parameter.byReference) {
+            // A reference must be addressable and must match exactly. A
+            // converted copy would silently stop being the caller's.
+            if (!node.arguments()[i]->isAddressable()) {
+                diag_.error(line_, "'" + parameter.name + "' needs a variable");
+            } else if (given != parameter.type) {
+                diag_.error(line_, "'" + parameter.name + "' must be " +
+                                       parameter.type->spelling());
+            }
+            continue;
+        }
+        coerce(node.arguments()[i], parameter.type);
+    }
+    for (size_t i = 0; i < node.arguments().size(); ++i) shallower();
+
+    // Scratch slots: one per extra output, plus one per reference argument
+    // for the copy the callee works on.
+    int scratch = 0;
+    if (proto.returnsByPointer()) scratch += static_cast<int>(proto.outputs.size());
+    for (const Param &parameter : proto.inputs) if (parameter.byReference) ++scratch;
+    if (scratch > 0) {
+        const int base = function_->addHiddenSlot();
+        for (int i = 1; i < scratch; ++i) function_->addHiddenSlot();
+        node.setScratchBase(base);
+    }
+
+    // In an expression a call is worth its first output. A call with none has
+    // no value and is only legal as a statement, which is checked there.
+    node.setType(proto.outputs.empty() ? nullptr : proto.outputs[0]);
+}
+
+void Checker::visit(CallStmt &node) {
+    typeOf(node.call());
+}
+
+void Checker::visit(Return &node) {
+    const size_t declared = function_ ? function_->proto().outputs.size() : 0;
+    if (node.exprs().size() != declared) {
+        diag_.error(line_, "'" + function_->proto().name + "' returns " +
+                               std::to_string(declared) + " values");
+    }
+    for (size_t i = 0; i < node.exprs().size(); ++i) {
+        typeOf(node.exprs()[i]);
+        if (i < declared) coerce(node.exprs()[i], function_->proto().outputs[i]);
+    }
+}
+
+// '<a,b> : f(...)'. The count must match the output list exactly; targets
+// that do not exist are created with the declared output types.
+void Checker::visit(MultiAssign &node) {
+    typeOf(node.call());
+
+    Call &call = static_cast<Call &>(*node.call());
+    if (!call.prototype()) return;
+    const Prototype &proto = *call.prototype();
+
+    if (node.names().size() != proto.outputs.size()) {
+        diag_.error(line_, "'" + call.callee() + "' returns " +
+                               std::to_string(proto.outputs.size()) + " values");
+        return;
+    }
+    for (size_t i = 0; i < node.names().size(); ++i) {
+        const Symbol *target = scope_.lookup(node.names()[i]);
+        if (!target) {
+            Symbol *created = function_->declare(node.names()[i], proto.outputs[i]);
+            scope_.define(node.names()[i], created);
+            target = created;
+        }
+        node.targets().push_back(target);
+    }
+}
 
 bool Checker::constantNumber(const Expr &expr, double &value) const {
     if (expr.isIntLiteral())  { value = static_cast<const IntLit &>(expr).value();  return true; }

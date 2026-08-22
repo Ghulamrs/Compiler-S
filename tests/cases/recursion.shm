@@ -1,0 +1,11 @@
+fun <int> = deep(n: int) {
+  if n < 1 {
+    return 0
+  }
+  return 1 + deep(n - 1)
+}
+
+fun <> = main() {
+  ? deep(100)
+  ? deep(200)
+}

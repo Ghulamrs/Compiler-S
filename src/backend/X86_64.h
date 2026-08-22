@@ -49,8 +49,17 @@ public:
     void setArg(Slot kind, int index) override;
     void loadSlotIntoArg(Slot kind, int slot, int index) override;
 
-    void callRuntime(const std::string &name) override;
+    bool positionalArguments() const override { return abi_.positional; }
+    void spillArgument(Slot kind, int registerIndex, int slot) override;
+    void call(const std::string &name) override;
     void widenAccumulator() override;
+
+    void loadSlotAddress(int slot) override;
+    void storeThroughPointer(Slot kind, int pointerSlot) override;
+    void loadThroughPointer(Slot kind, int pointerSlot) override;
+
+    void defineBytes(int id, const std::string &bytes) override;
+    void loadBytesAddress(int id) override;
 
     void jump(int id) override;
     void jumpIfZero(int id) override;
@@ -68,6 +77,12 @@ protected:
     // How a local label is spelled, which is the one piece of control flow
     // the two assemblers do not agree on.
     virtual std::string labelName(int id) const = 0;
+    virtual std::string bytesLabel(int id) const = 0;
+
+    // How a byte array is opened and closed, and how its address is taken.
+    // ELF and COFF disagree about all three.
+    virtual void openConstSection() = 0;
+    virtual void closeConstSection() = 0;
 
     // Bytes the frame reserves below rbp: the slots first, then the shadow
     // area at the bottom where a callee expects to find it. The whole is
@@ -84,10 +99,15 @@ protected:
     // Names the module refers to but does not define. MASM wants each one
     // declared; the GNU assembler works them out for itself.
     void noteExternal(const std::string &name) override;
-    const std::vector<std::string> &externals() const { return externals_; }
+    void noteDefined(const std::string &name);
+    // Every name referred to and not defined here. A module that declares one
+    // of its own definitions external is refused by MASM, and a call to a
+    // function defined further down the same file is exactly that case.
+    std::vector<std::string> externals() const;
 
 private:
-    std::vector<std::string> externals_;
+    std::vector<std::string> referenced_;
+    std::vector<std::string> defined_;
     int frameBytes_ = 0;
 
     // Which register, which mnemonic and which width a slot's traffic uses.

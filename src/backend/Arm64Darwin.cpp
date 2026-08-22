@@ -8,6 +8,11 @@ void Arm64DarwinEmitter::beginModule(const std::string &sourceName) {
 }
 
 void Arm64DarwinEmitter::endModule() {
+    if (!data_.empty()) {
+        blank();
+        raw("\t.section\t__TEXT,__const");
+        text_ += data_;
+    }
     blank();
 }
 
@@ -100,8 +105,52 @@ void Arm64DarwinEmitter::loadSlotIntoArg(Slot kind, int slot, int index) {
                 ", " + slotAddress(slot));
 }
 
-void Arm64DarwinEmitter::callRuntime(const std::string &name) {
+void Arm64DarwinEmitter::spillArgument(Slot kind, int registerIndex, int slot) {
+    instruction(std::string("str\t") + registerFile(kind) + std::to_string(registerIndex) +
+                ", " + slotAddress(slot));
+}
+
+void Arm64DarwinEmitter::call(const std::string &name) {
     instruction("bl\t" + symbol(name));
+}
+
+void Arm64DarwinEmitter::loadSlotAddress(int slot) {
+    instruction("add\tx0, sp, #" + std::to_string(frameBytes_ - 8 * (slot + 1)));
+}
+
+// x9 is a caller-saved temporary, so the pointer can be brought out of its
+// slot without disturbing the accumulator that is about to be written.
+void Arm64DarwinEmitter::storeThroughPointer(Slot kind, int pointerSlot) {
+    instruction("ldr\tx9, " + slotAddress(pointerSlot));
+    instruction(std::string("str\t") + registerFile(kind) + "0, [x9]");
+}
+
+void Arm64DarwinEmitter::loadThroughPointer(Slot kind, int pointerSlot) {
+    instruction("ldr\tx9, " + slotAddress(pointerSlot));
+    instruction(std::string("ldr\t") + registerFile(kind) + "0, [x9]");
+}
+
+std::string Arm64DarwinEmitter::bytesLabel(int id) {
+    return "lshmb" + std::to_string(id);
+}
+
+void Arm64DarwinEmitter::defineBytes(int id, const std::string &bytes) {
+    data_ += bytesLabel(id) + ":\n";
+    std::string line;
+    for (size_t i = 0; i < bytes.size(); ++i) {
+        if (line.empty()) line = "\t.byte\t";
+        else line += ", ";
+        line += std::to_string(static_cast<unsigned char>(bytes[i]));
+        if (i % 16 == 15) { data_ += line + "\n"; line.clear(); }
+    }
+    if (!line.empty()) data_ += line + "\n";
+}
+
+// A page and an offset: Mach-O has no single instruction that reaches an
+// arbitrary address, and the pair is what the linker knows how to relax.
+void Arm64DarwinEmitter::loadBytesAddress(int id) {
+    instruction("adrp\tx0, " + bytesLabel(id) + "@PAGE");
+    instruction("add\tx0, x0, " + bytesLabel(id) + "@PAGEOFF");
 }
 
 void Arm64DarwinEmitter::widenAccumulator() {

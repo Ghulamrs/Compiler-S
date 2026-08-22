@@ -28,8 +28,17 @@ public:
     void setArg(Slot kind, int index) override;
     void loadSlotIntoArg(Slot kind, int slot, int index) override;
 
-    void callRuntime(const std::string &name) override;
+    bool positionalArguments() const override { return false; }
+    void spillArgument(Slot kind, int registerIndex, int slot) override;
+    void call(const std::string &name) override;
     void widenAccumulator() override;
+
+    void loadSlotAddress(int slot) override;
+    void storeThroughPointer(Slot kind, int pointerSlot) override;
+    void loadThroughPointer(Slot kind, int pointerSlot) override;
+
+    void defineBytes(int id, const std::string &bytes) override;
+    void loadBytesAddress(int id) override;
 
     void label(int id) override;
     void jump(int id) override;
@@ -49,6 +58,7 @@ private:
     // Mach-O treats a label beginning with 'L' as temporary, so it does not
     // reach the symbol table.
     static std::string labelName(int id);
+    static std::string bytesLabel(int id);
 
     // A 64-bit constant into a register, sixteen bits at a time. The
     // assembler's synthetic 'mov reg, #imm' would do this for a value it can

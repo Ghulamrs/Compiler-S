@@ -67,9 +67,34 @@ public:
     virtual void setArg(Slot kind, int index) = 0;
     virtual void loadSlotIntoArg(Slot kind, int slot, int index) = 0;
 
+    // Whether argument n takes slot n in whichever register file, so that
+    // spending one file's slot spends the other's. Microsoft's convention is
+    // positional; System V's and Apple's are not. The generator asks because
+    // it is the one that knows a call's signature.
+    virtual bool positionalArguments() const = 0;
+
+    // A parameter arriving in a register, put where the body will look for
+    // it. Called once per parameter, immediately after beginFunction.
+    virtual void spillArgument(Slot kind, int registerIndex, int slot) = 0;
+
     // The result lands in the accumulator of whichever kind the callee
     // returns; the generator knows which and the target does not have to.
-    virtual void callRuntime(const std::string &name) = 0;
+    // The name is the linker's, before the target's own prefix.
+    virtual void call(const std::string &name) = 0;
+
+    // Addresses. A slot's own address is how a '&' parameter and a second
+    // output travel; reading and writing through one is what the other end
+    // of that does.
+    virtual void loadSlotAddress(int slot) = 0;
+    virtual void storeThroughPointer(Slot kind, int pointerSlot) = 0;
+    virtual void loadThroughPointer(Slot kind, int pointerSlot) = 0;
+
+    // Read-only bytes, named by a number the generator hands out. Written
+    // numerically rather than as a quoted string: the two assemblers escape
+    // differently and neither escapes everything, and a byte list has no
+    // escaping to get wrong.
+    virtual void defineBytes(int id, const std::string &bytes) = 0;
+    virtual void loadBytesAddress(int id) = 0;
 
     // Sign-extend the int accumulator into the wide one. They are the same
     // register on both architectures, which is why this is a widening rather
@@ -90,7 +115,7 @@ public:
     void setLine(int line) {
         loadIntConstant(line);
         setArg(Slot::Int, 0);
-        callRuntime("shm_line");
+        call("shm_line");
     }
 
 protected:
@@ -110,6 +135,11 @@ protected:
     // instruction and saves a constant pool, a section and a relocation on
     // every target at once.
     static uint64_t bitsOf(double value);
+
+    // Read-only data, built up as the code is written and put out by the
+    // target when the module ends - which is also when MASM's EXTRN list is
+    // known, so the two arrive together rather than needing two passes.
+    std::string data_;
 
     std::string text_;
 };

@@ -123,7 +123,60 @@ void X86_64Emitter::loadSlotIntoArg(Slot kind, int slot, int index) {
                                  spelling_.reg(argRegister(kind, index), width)));
 }
 
-void X86_64Emitter::callRuntime(const std::string &name) {
+void X86_64Emitter::spillArgument(Slot kind, int registerIndex, int slot) {
+    const int width = widthFor(kind);
+    instruction(spelling_.binary(moveFor(kind), kind == Slot::Real ? 0 : width,
+                                 spelling_.reg(argRegister(kind, registerIndex), width),
+                                 slotOperand(slot, width)));
+}
+
+void X86_64Emitter::loadSlotAddress(int slot) {
+    instruction(spelling_.loadAddress(slotOperand(slot, 8), spelling_.reg(accumulator, 8)));
+}
+
+// r10 is caller-saved in both conventions and is not an argument register in
+// either, so the pointer can be brought out of its slot without disturbing
+// anything the call is about to want.
+void X86_64Emitter::storeThroughPointer(Slot kind, int pointerSlot) {
+    instruction(spelling_.binary("mov", 8, slotOperand(pointerSlot, 8),
+                                 spelling_.reg(Reg::R10, 8)));
+    const int width = widthFor(kind);
+    instruction(spelling_.binary(moveFor(kind), kind == Slot::Real ? 0 : width,
+                                 spelling_.reg(registerFor(kind), width),
+                                 spelling_.indirect(Reg::R10, width)));
+}
+
+void X86_64Emitter::loadThroughPointer(Slot kind, int pointerSlot) {
+    instruction(spelling_.binary("mov", 8, slotOperand(pointerSlot, 8),
+                                 spelling_.reg(Reg::R10, 8)));
+    const int width = widthFor(kind);
+    instruction(spelling_.binary(moveFor(kind), kind == Slot::Real ? 0 : width,
+                                 spelling_.indirect(Reg::R10, width),
+                                 spelling_.reg(registerFor(kind), width)));
+}
+
+void X86_64Emitter::defineBytes(int id, const std::string &bytes) {
+    std::string line = bytesLabel(id) + spelling_.byteArrayHead();
+    bool opened = false;
+    for (size_t i = 0; i < bytes.size(); ++i) {
+        if (opened) line += ", ";
+        line += std::to_string(static_cast<unsigned char>(bytes[i]));
+        opened = true;
+        if (i % 16 == 15 && i + 1 < bytes.size()) {
+            data_ += line + "\n";
+            line = spelling_.byteDirective();
+            opened = false;
+        }
+    }
+    data_ += line + "\n";
+}
+
+void X86_64Emitter::loadBytesAddress(int id) {
+    instruction(spelling_.loadAddress(spelling_.dataReference(bytesLabel(id)),
+                                      spelling_.reg(accumulator, 8)));
+}
+
+void X86_64Emitter::call(const std::string &name) {
     const std::string linkName = symbol(name);
     noteExternal(linkName);
     instruction(spelling_.call(linkName));
@@ -145,9 +198,25 @@ void X86_64Emitter::jumpIfZero(int id) {
 }
 
 void X86_64Emitter::noteExternal(const std::string &name) {
-    if (std::find(externals_.begin(), externals_.end(), name) == externals_.end()) {
-        externals_.push_back(name);
+    if (std::find(referenced_.begin(), referenced_.end(), name) == referenced_.end()) {
+        referenced_.push_back(name);
     }
+}
+
+void X86_64Emitter::noteDefined(const std::string &name) {
+    if (std::find(defined_.begin(), defined_.end(), name) == defined_.end()) {
+        defined_.push_back(name);
+    }
+}
+
+std::vector<std::string> X86_64Emitter::externals() const {
+    std::vector<std::string> out;
+    for (const std::string &name : referenced_) {
+        if (std::find(defined_.begin(), defined_.end(), name) == defined_.end()) {
+            out.push_back(name);
+        }
+    }
+    return out;
 }
 
 }  // namespace shalimar

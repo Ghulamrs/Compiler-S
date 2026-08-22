@@ -105,10 +105,20 @@ void    shm_loop_real_check(double start, double end, double step);
 double  shm_loop_real_value(double start, double step, double pass);
 int32_t shm_loop_real_run(double value, double end, double step);
 
+// Recursion. Unbounded recursion exhausts the native stack as a segmentation
+// fault, which cannot be caught and takes the program down with an empty
+// console. Two ceilings prevent it: a per-function one of 256 / (inputs + 1)
+// frames, and an overall 1024 that catches mutual recursion where no single
+// function approaches its own cap. Both are deliberate under-approximations
+// of what the stack could take.
+void shm_enter(int32_t id, int32_t limit, const char *name);
+void shm_leave(int32_t id);
+
 // One print item: the value followed by a single space. '?' then ends the
 // line, '??' leaves it open.
 void shm_print_int(int32_t value);
 void shm_print_real(double value);
+void shm_print_text(const char *text);
 void shm_line_end(void);
 
 #ifdef __cplusplus

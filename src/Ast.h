@@ -39,6 +39,11 @@ class While;
 class For;
 class Break;
 class Continue;
+class Call;
+class Return;
+class MultiAssign;
+class CallStmt;
+class StrLit;
 
 class NodeVisitor {
 public:
@@ -61,6 +66,11 @@ public:
     virtual void visit(For &) = 0;
     virtual void visit(Break &) = 0;
     virtual void visit(Continue &) = 0;
+    virtual void visit(Call &) = 0;
+    virtual void visit(Return &) = 0;
+    virtual void visit(MultiAssign &) = 0;
+    virtual void visit(CallStmt &) = 0;
+    virtual void visit(StrLit &) = 0;
 };
 
 class Node {
@@ -85,10 +95,16 @@ public:
     const Type *type() const { return type_; }
     int slot() const { return slot_; }
 
+    // A '&' parameter: the slot holds the caller's address rather than the
+    // value, so every read and write of the name goes through it.
+    bool isReference() const { return reference_; }
+    void makeReference() { reference_ = true; }
+
 private:
     std::string name_;
     const Type *type_;
     int slot_;
+    bool reference_ = false;
 };
 
 // ---------------------------------------------------------------- expressions
@@ -214,6 +230,54 @@ private:
     ExprPtr rhs_;
 };
 
+// A string literal is the text plus a terminating char(0). It is a char[],
+// which makes it the one literal in the language that is an array.
+class StrLit : public Expr {
+public:
+    explicit StrLit(std::string text) : text_(std::move(text)) {}
+
+    const std::string &text() const { return text_; }
+    int id() const { return id_; }
+    void setId(int id) { id_ = id; }
+
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+
+private:
+    std::string text_;
+    int id_ = 0;
+};
+
+struct Prototype;
+
+class Call : public Expr {
+public:
+    Call(std::string callee, int line) : callee_(std::move(callee)), line_(line) {}
+
+    void add(ExprPtr argument) { arguments_.push_back(std::move(argument)); }
+
+    const std::string &callee() const { return callee_; }
+    std::vector<ExprPtr> &arguments() { return arguments_; }
+    int line() const { return line_; }
+
+    const Prototype *prototype() const { return prototype_; }
+    void resolve(const Prototype *p) { prototype_ = p; }
+
+    // Where the extra outputs of a multi-output call are put, and where a
+    // reference argument's copy lives while the call is running. Both are
+    // slots the caller lends the callee the address of.
+    int scratchBase() const { return scratchBase_; }
+    void setScratchBase(int base) { scratchBase_ = base; }
+
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+
+private:
+    std::string callee_;
+    std::vector<ExprPtr> arguments_;
+    int line_;
+    const Prototype *prototype_ = nullptr;
+    int scratchBase_ = 0;
+};
+
 // ----------------------------------------------------------------- statements
 
 class Stmt : public Node {
@@ -292,6 +356,53 @@ public:
 private:
     std::vector<ExprPtr> items_;
     bool newline_;
+};
+
+// 'return', 'return e' or 'return (e, e, ...)'. A function that declares
+// outputs must return them on every path; falling off the end is refused.
+class Return : public Stmt {
+public:
+    explicit Return(int line) : Stmt(line) {}
+
+    void add(ExprPtr expr) { exprs_.push_back(std::move(expr)); }
+    std::vector<ExprPtr> &exprs() { return exprs_; }
+
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+
+private:
+    std::vector<ExprPtr> exprs_;
+};
+
+// '<a,b> : f(...)' - the only way to consume more than one returned value.
+class MultiAssign : public Stmt {
+public:
+    MultiAssign(int line) : Stmt(line) {}
+
+    void addTarget(std::string name) { names_.push_back(std::move(name)); }
+    void setCall(ExprPtr call) { call_ = std::move(call); }
+
+    const std::vector<std::string> &names() const { return names_; }
+    std::vector<const Symbol *> &targets() { return targets_; }
+    ExprPtr &call() { return call_; }
+
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+
+private:
+    std::vector<std::string> names_;
+    std::vector<const Symbol *> targets_;
+    ExprPtr call_;
+};
+
+// A call written where a statement belongs, its outputs discarded.
+class CallStmt : public Stmt {
+public:
+    CallStmt(ExprPtr call, int line) : Stmt(line), call_(std::move(call)) {}
+
+    ExprPtr &call() { return call_; }
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+
+private:
+    ExprPtr call_;
 };
 
 // 'if cond { } elseif cond { } else { }'. Any number of elseif branches, at
@@ -430,17 +541,30 @@ private:
     int evaluationDepth_ = 0;
 };
 
-// 'fun <outputs> = name(inputs)'. The output list holds types, not names.
-class Prototype {
-public:
-    Prototype(std::string name, int line) : name_(std::move(name)), line_(line) {}
+// A parameter. An array is a reference always; a scalar is one only when it
+// is written with '&'.
+struct Param {
+    std::string name;
+    const Type *type = nullptr;
+    bool byReference = false;
+};
 
-    const std::string &name() const { return name_; }
-    int line() const { return line_; }
+// 'fun <outputs> = name(inputs)'. The output list holds types, not names -
+// in 2.x it held a variable's name and the function could fall off its end
+// returning whatever that held, and both of those are gone.
+struct Prototype {
+    std::string name;
+    std::vector<const Type *> outputs;
+    std::vector<Param> inputs;
+    int line = 0;
+    // Its place in the program, which is the index the runtime counts
+    // recursion depth against.
+    int id = 0;
 
-private:
-    std::string name_;
-    int line_;
+    // Where a call puts its results. None: nothing. One: the accumulator.
+    // More: the caller lends an address for each and the function returns
+    // nothing, which is uniform and costs a store the single case avoids.
+    bool returnsByPointer() const { return outputs.size() > 1; }
 };
 
 class Function {
@@ -449,6 +573,9 @@ public:
         : proto_(std::move(proto)), body_(std::move(body)) {}
 
     const Prototype &proto() const { return proto_; }
+    Prototype &proto() { return proto_; }
+    bool isCalled() const { return called_; }
+    void markCalled() { called_ = true; }
     Block &body() { return body_; }
     const Block &body() const { return body_; }
     Frame &frame() { return frame_; }
@@ -468,11 +595,27 @@ public:
     // the whole loop, which every expression inside it may use.
     int addHiddenSlot() { return frame_.addVariable(); }
 
+    // Where the addresses of a multi-output function's results are kept. The
+    // caller lends one per output; they arrive as arguments after the
+    // declared ones and are spilled like any other.
+    int outPointerBase() const { return outPointerBase_; }
+    void setOutPointerBase(int base) { outPointerBase_ = base; }
+
+    // Where a single return value waits between the 'return' that computed
+    // it and the epilogue. It cannot stay in the accumulator: the epilogue
+    // has a call of its own to make - the recursion counter comes down there
+    // - and a call is exactly what does not preserve an accumulator.
+    int resultSlot() const { return resultSlot_; }
+    void setResultSlot(int slot) { resultSlot_ = slot; }
+
 private:
     Prototype proto_;
     Block body_;
     Frame frame_;
     std::vector<std::unique_ptr<Symbol>> symbols_;
+    bool called_ = false;
+    int outPointerBase_ = 0;
+    int resultSlot_ = -1;
 };
 
 // Execution begins at main(), which takes no inputs. Definitions may be
@@ -484,6 +627,7 @@ public:
     std::vector<std::unique_ptr<Function>> &functions() { return functions_; }
     const std::vector<std::unique_ptr<Function>> &functions() const { return functions_; }
     const Function *find(const std::string &name) const;
+    Function *find(const std::string &name);
 
 private:
     std::vector<std::unique_ptr<Function>> functions_;

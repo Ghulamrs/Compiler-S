@@ -76,11 +76,18 @@ public:
     void visit(For &node) override;
     void visit(Break &node) override;
     void visit(Continue &node) override;
+    void visit(Call &node) override;
+    void visit(Return &node) override;
+    void visit(MultiAssign &node) override;
+    void visit(CallStmt &node) override;
+    void visit(StrLit &node) override;
 
 private:
     Diagnostics &diag_;
+    Program *program_ = nullptr;
     int line_ = 0;               // the statement being checked
     Function *function_ = nullptr;
+    int strings_ = 0;            // how many string literals have been numbered
     Scope scope_;
     int depth_ = 0;              // evaluation slots in use right now
 
@@ -115,6 +122,11 @@ private:
     bool constantNumber(const Expr &expr, double &value) const;
     void warnIfLoopNeverRuns(For &node);
     static std::string number(double value);
+
+    // Whether the block ends on a path that has returned. A function that
+    // declares outputs must return them on every path; falling off the end is
+    // an error rather than an implicit empty return.
+    static bool alwaysReturns(const Block &body);
 };
 
 }  // namespace shalimar

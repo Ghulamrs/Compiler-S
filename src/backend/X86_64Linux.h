@@ -25,6 +25,9 @@ public:
 private:
     // '.L' is what the GNU assembler treats as a temporary symbol on ELF.
     std::string labelName(int id) const override { return ".Lshm" + std::to_string(id); }
+    std::string bytesLabel(int id) const override { return ".Lshmb" + std::to_string(id); }
+    void openConstSection() override;
+    void closeConstSection() override;
 
     GnuSpelling spelling_impl_;
 };

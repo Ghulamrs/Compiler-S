@@ -30,6 +30,9 @@ private:
     // MASM has no temporary-symbol convention, so a label is an ordinary name
     // and the generator's numbering is what keeps it unique.
     std::string labelName(int id) const override { return "Lshm" + std::to_string(id); }
+    std::string bytesLabel(int id) const override { return "Lshmb" + std::to_string(id); }
+    void openConstSection() override;
+    void closeConstSection() override;
 
     MasmSpelling spelling_impl_;
     std::string sourceName_;

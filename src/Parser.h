@@ -74,6 +74,8 @@ private:
     // covers the case this does not: a bare call on the next line, since
     // 'identifier(' is not recognised here.
     bool looksLikeNewStatement(size_t at) const;
+    bool looksLikeMultiAssignHeader(size_t start) const;
+    bool parenGroupHasTopLevelComma(size_t start) const;
 
     std::unique_ptr<Function> parseFunction();
     Block parseBlock();
@@ -81,6 +83,8 @@ private:
     StmtPtr parseDeclaration();
     StmtPtr parseAssignment();
     StmtPtr parsePrint();
+    StmtPtr parseReturn();
+    StmtPtr parseMultiAssign();
     StmtPtr parseIf();
     StmtPtr parseWhile();
     StmtPtr parseFor();

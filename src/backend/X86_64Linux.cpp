@@ -7,7 +7,21 @@ void X86_64LinuxEmitter::beginModule(const std::string &sourceName) {
     raw("\t.text");
 }
 
+void X86_64LinuxEmitter::openConstSection() {
+    raw("\t.section\t.rodata");
+}
+
+void X86_64LinuxEmitter::closeConstSection() {
+    raw("\t.text");
+}
+
 void X86_64LinuxEmitter::endModule() {
+    if (!data_.empty()) {
+        blank();
+        openConstSection();
+        text_ += data_;
+        closeConstSection();
+    }
     // A GNU-as object gets a non-executable stack only if it says so, and a
     // missing note makes the whole program's stack executable on modern
     // toolchains. Nothing here needs one.

@@ -12,6 +12,7 @@ void X86_64WindowsEmitter::beginModule(const std::string &sourceName) {
 void X86_64WindowsEmitter::beginFunction(const std::string &name, int slots) {
     setSlots(slots);
     const std::string s = symbol(name);
+    noteDefined(s);
     openProcedure_ = s;
     blank();
     raw("PUBLIC\t" + s);
@@ -29,6 +30,14 @@ void X86_64WindowsEmitter::label(int id) {
     raw(labelName(id) + ":");
 }
 
+void X86_64WindowsEmitter::openConstSection() {
+    raw("CONST\tSEGMENT");
+}
+
+void X86_64WindowsEmitter::closeConstSection() {
+    raw("CONST\tENDS");
+}
+
 void X86_64WindowsEmitter::endModule() {
     std::string header;
     header += "; " + sourceName_ + "\n";
@@ -40,6 +49,12 @@ void X86_64WindowsEmitter::endModule() {
 
     text_ = header + text_;
     raw("_TEXT\tENDS");
+    if (!data_.empty()) {
+        blank();
+        openConstSection();
+        text_ += data_;
+        closeConstSection();
+    }
     raw("END");
 }
 

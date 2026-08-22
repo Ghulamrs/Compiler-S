@@ -81,11 +81,21 @@ std::unique_ptr<Program> Parser::parse() {
 // as the '>' plus the '=' rather than silently breaking programs over an
 // operator they do not use.
 std::unique_ptr<Function> Parser::parseFunction() {
-    const int line = current().line;
+    Prototype proto;
+    proto.line = current().line;
     advance();                                            // 'fun'
 
     if (!atOperator("<")) { failUnexpected(); return nullptr; }
     advance();
+
+    // The output list holds types. '<r>' named a variable in 2.x; it is a
+    // parse error now, because 'r' is not a type.
+    while (!atOperator(">") && !atOperator(">=")) {
+        const Type *type = scalarTypeHere();
+        if (!type) { failUnexpected(); return nullptr; }
+        proto.outputs.push_back(type);
+        if (!match(Tok::Comma)) break;
+    }
 
     if (atOperator(">=")) {
         advance();
@@ -97,15 +107,40 @@ std::unique_ptr<Function> Parser::parseFunction() {
     }
 
     if (!at(Tok::Identifier)) { failUnexpected(); return nullptr; }
-    std::string name = advance().text;
+    proto.name = advance().text;
 
     if (!expect(Tok::ParensOpen, unexpected())) return nullptr;
+    while (!at(Tok::ParensClose)) {
+        Param parameter;
+        if (atOperator("&")) { advance(); parameter.byReference = true; }
+        if (!at(Tok::Identifier)) { failUnexpected(); return nullptr; }
+        parameter.name = advance().text;
+
+        int rank = 0;
+        while (at(Tok::BracketOpen)) {
+            advance();
+            if (!expect(Tok::BracketClose, unexpected())) return nullptr;
+            ++rank;
+        }
+        if (!expect(Tok::Assign, unexpected())) return nullptr;
+        const Type *scalar = scalarTypeHere();
+        if (!scalar) { failUnexpected(); return nullptr; }
+
+        if (rank > 0) {
+            diag_.unsupported(proto.line, "an array parameter");
+            failed_ = true;
+            return nullptr;
+        }
+        parameter.type = scalar;
+        proto.inputs.push_back(parameter);
+        if (!match(Tok::Comma)) break;
+    }
     if (!expect(Tok::ParensClose, unexpected())) return nullptr;
 
     Block body = parseBlock();
     if (failed_) return nullptr;
 
-    return std::unique_ptr<Function>(new Function(Prototype(name, line), std::move(body)));
+    return std::unique_ptr<Function>(new Function(std::move(proto), std::move(body)));
 }
 
 Block Parser::parseBlock() {
@@ -146,11 +181,21 @@ StmtPtr Parser::parseStatement() {
     // begin a statement. That is the whole of how a statement boundary is
     // found here: there is no terminator, and the parser decides by what it
     // is looking at.
+    if (at(Tok::Return)) return parseReturn();
+    if (atOperator("<") && looksLikeMultiAssignHeader(index_)) return parseMultiAssign();
+
     if (at(Tok::Identifier)) {
         const Tok next = peek(1).kind;
         if (next == Tok::Assign || next == Tok::PlusAssign || next == Tok::MinusAssign ||
             (next == Tok::Operator && peek(1).text == "=")) {
             return parseAssignment();
+        }
+        // A call written where a statement belongs, its outputs discarded.
+        if (next == Tok::ParensOpen) {
+            const int line = current().line;
+            ExprPtr call = parsePrimary();
+            if (failed_) return nullptr;
+            return StmtPtr(new CallStmt(std::move(call), line));
         }
     }
     failUnexpected();
@@ -208,6 +253,98 @@ StmtPtr Parser::parseAssignment() {
         value.reset(new Binary(op, ExprPtr(new Var(name)), std::move(value)));
     }
     return StmtPtr(new Assign(ExprPtr(new Var(name)), std::move(value), line));
+}
+
+// 'return', 'return e', or 'return (e, e, ...)' - the parentheses are
+// required for two or more, which is what tells the list from a single
+// parenthesised expression.
+StmtPtr Parser::parseReturn() {
+    const int line = current().line;
+    advance();
+
+    std::unique_ptr<Return> node(new Return(line));
+    if (!startsTerm() || startsLine(index_) || looksLikeNewStatement(index_)) {
+        return StmtPtr(node.release());
+    }
+
+    if (at(Tok::ParensOpen) && parenGroupHasTopLevelComma(index_)) {
+        advance();
+        while (true) {
+            ExprPtr value = parseExpression();
+            if (failed_) return nullptr;
+            node->add(std::move(value));
+            if (!match(Tok::Comma)) break;
+        }
+        if (!expect(Tok::ParensClose, unexpected())) return nullptr;
+        return StmtPtr(node.release());
+    }
+
+    ExprPtr value = parseExpression();
+    if (failed_) return nullptr;
+    node->add(std::move(value));
+    return StmtPtr(node.release());
+}
+
+// Whether the parenthesised group starting here holds a comma at its top
+// level, which is what separates 'return (a, b)' from 'return (a + b)'.
+bool Parser::parenGroupHasTopLevelComma(size_t start) const {
+    int depth = 0;
+    for (size_t i = start; i < tokens_.size(); ++i) {
+        switch (tokens_[i].kind) {
+        case Tok::ParensOpen:
+        case Tok::BracketOpen:
+            ++depth;
+            break;
+        case Tok::ParensClose:
+        case Tok::BracketClose:
+            if (--depth == 0) return false;
+            break;
+        case Tok::Comma:
+            if (depth == 1) return true;
+            break;
+        default:
+            break;
+        }
+    }
+    return false;
+}
+
+// '<a,b> : f(...)'. The '<' is overloaded three ways, so wherever one could
+// start a statement the parser peeks for the exact shape before committing.
+bool Parser::looksLikeMultiAssignHeader(size_t start) const {
+    size_t i = start + 1;
+    if (i >= tokens_.size() || tokens_[i].kind != Tok::Identifier) return false;
+    ++i;
+    while (i < tokens_.size() && tokens_[i].kind == Tok::Comma) {
+        ++i;
+        if (i >= tokens_.size() || tokens_[i].kind != Tok::Identifier) return false;
+        ++i;
+    }
+    if (i >= tokens_.size()) return false;
+    const bool closes = tokens_[i].kind == Tok::Operator && tokens_[i].text == ">";
+    if (!closes) return false;
+    ++i;
+    return i < tokens_.size() && tokens_[i].kind == Tok::Assign;
+}
+
+StmtPtr Parser::parseMultiAssign() {
+    const int line = current().line;
+    advance();                                     // '<'
+
+    std::unique_ptr<MultiAssign> node(new MultiAssign(line));
+    node->addTarget(advance().text);
+    while (match(Tok::Comma)) node->addTarget(advance().text);
+    advance();                                     // '>'
+    advance();                                     // ':'
+
+    if (!at(Tok::Identifier) || peek(1).kind != Tok::ParensOpen) {
+        failUnexpected();
+        return nullptr;
+    }
+    ExprPtr call = parsePrimary();
+    if (failed_) return nullptr;
+    node->setCall(std::move(call));
+    return StmtPtr(node.release());
 }
 
 StmtPtr Parser::parseIf() {
@@ -327,6 +464,7 @@ bool Parser::startsTerm() const {
     switch (current().kind) {
     case Tok::IntLiteral:
     case Tok::RealLiteral:
+    case Tok::StringLiteral:
     case Tok::Identifier:
     case Tok::ParensOpen:
         return true;
@@ -385,6 +523,9 @@ ExprPtr Parser::parseComparison() {
     ExprPtr left = parseAdditive();
     while (!failed_) {
         Binary::Op op;
+        // A '<' that opens a multi-assign header is not a comparison, so it
+        // ends the expression rather than continuing it.
+        if (atOperator("<") && looksLikeMultiAssignHeader(index_)) break;
         if      (atOperator("="))  op = Binary::Op::Equal;
         else if (atOperator("!=")) op = Binary::Op::NotEqual;
         else if (atOperator("<"))  op = Binary::Op::Less;
@@ -470,8 +611,24 @@ ExprPtr Parser::parsePrimary() {
         const Token &t = advance();
         return ExprPtr(new RealLit(t.realValue));
     }
+    if (at(Tok::StringLiteral)) {
+        const Token &t = advance();
+        return ExprPtr(new StrLit(t.text));
+    }
     if (at(Tok::Identifier)) {
         const Token &t = advance();
+        if (at(Tok::ParensOpen)) {
+            advance();
+            std::unique_ptr<Call> call(new Call(t.text, t.line));
+            while (!at(Tok::ParensClose)) {
+                ExprPtr argument = parseExpression();
+                if (failed_) return nullptr;
+                call->add(std::move(argument));
+                if (!match(Tok::Comma)) break;
+            }
+            if (!expect(Tok::ParensClose, unexpected())) return nullptr;
+            return ExprPtr(call.release());
+        }
         return ExprPtr(new Var(t.text));
     }
     if (at(Tok::ParensOpen)) {
