@@ -101,6 +101,10 @@ std::string GnuSpelling::indirect(Reg base, int) const {
     return "(" + reg(base, 8) + ")";
 }
 
+std::string GnuSpelling::offsetFrom(Reg base, int offset, int) const {
+    return std::to_string(offset) + "(" + reg(base, 8) + ")";
+}
+
 // The label owns its line and the bytes follow it.
 std::string GnuSpelling::byteArrayHead() const { return ":\n\t.byte\t"; }
 std::string GnuSpelling::byteDirective() const { return "\t.byte\t"; }
@@ -157,6 +161,11 @@ std::string MasmSpelling::loadAddress(const std::string &from, const std::string
 std::string MasmSpelling::indirect(Reg base, int width) const {
     const char *size = width == 8 ? "QWORD" : (width == 1 ? "BYTE" : "DWORD");
     return std::string(size) + " PTR [" + reg(base, 8) + "]";
+}
+
+std::string MasmSpelling::offsetFrom(Reg base, int offset, int width) const {
+    const char *size = width == 8 ? "QWORD" : (width == 1 ? "BYTE" : "DWORD");
+    return std::string(size) + " PTR [" + reg(base, 8) + "+" + std::to_string(offset) + "]";
 }
 
 // MASM names a byte array with a label and no colon, and the DB has to be on

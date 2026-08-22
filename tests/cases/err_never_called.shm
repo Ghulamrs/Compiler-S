@@ -1,0 +1,2 @@
+fun <> = main() { }
+fun <int> = f(n: int) { }

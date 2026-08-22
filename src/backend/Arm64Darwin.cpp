@@ -126,6 +126,31 @@ void Arm64DarwinEmitter::loadThroughPointer(Slot kind, int pointerSlot) {
     instruction(std::string("ldr\t") + registerFile(kind) + "0, [x9]");
 }
 
+void Arm64DarwinEmitter::defineGlobals(int slots) {
+    if (slots <= 0) return;
+    blank();
+    raw("\t.globl\t" + symbol("shm_globals"));
+    raw("\t.zerofill\t__DATA,__bss," + symbol("shm_globals") + "," +
+        std::to_string(slots * 8) + ",3");
+}
+
+void Arm64DarwinEmitter::addressGlobals() {
+    instruction("adrp\tx9, " + symbol("shm_globals") + "@PAGE");
+    instruction("add\tx9, x9, " + symbol("shm_globals") + "@PAGEOFF");
+}
+
+void Arm64DarwinEmitter::loadGlobal(Slot kind, int index) {
+    addressGlobals();
+    instruction(std::string("ldr\t") + registerFile(kind) + "0, [x9, #" +
+                std::to_string(8 * index) + "]");
+}
+
+void Arm64DarwinEmitter::storeGlobal(Slot kind, int index) {
+    addressGlobals();
+    instruction(std::string("str\t") + registerFile(kind) + "0, [x9, #" +
+                std::to_string(8 * index) + "]");
+}
+
 std::string Arm64DarwinEmitter::bytesLabel(int id) {
     return "lshmb" + std::to_string(id);
 }

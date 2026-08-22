@@ -37,6 +37,10 @@ public:
     void storeThroughPointer(Slot kind, int pointerSlot) override;
     void loadThroughPointer(Slot kind, int pointerSlot) override;
 
+    void defineGlobals(int slots) override;
+    void loadGlobal(Slot kind, int index) override;
+    void storeGlobal(Slot kind, int index) override;
+
     void defineBytes(int id, const std::string &bytes) override;
     void loadBytesAddress(int id) override;
 
@@ -65,6 +69,9 @@ private:
     // reach the symbol table.
     static std::string labelName(int id);
     static std::string bytesLabel(int id);
+    // The block's address into x9, which is caller-saved and holds nothing
+    // of ours between instructions.
+    void addressGlobals();
 
     // A 64-bit constant into a register, sixteen bits at a time. The
     // assembler's synthetic 'mov reg, #imm' would do this for a value it can

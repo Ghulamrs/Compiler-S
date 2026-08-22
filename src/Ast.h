@@ -100,12 +100,20 @@ protected:
 // lives; `slot` is which eight-byte place in the frame holds it.
 class Symbol {
 public:
-    Symbol(std::string name, const Type *type, int slot)
-        : name_(std::move(name)), type_(type), slot_(slot) {}
+    // Where the value lives. A local is a slot in the current frame; a
+    // global is a slot in one block the whole program shares, because one
+    // symbol and an offset is the same three lines of assembly on every
+    // target where a symbol each would be three different ones.
+    enum class Storage { Local, Global };
+
+    Symbol(std::string name, const Type *type, int slot, Storage storage = Storage::Local)
+        : name_(std::move(name)), type_(type), slot_(slot), storage_(storage) {}
 
     const std::string &name() const { return name_; }
     const Type *type() const { return type_; }
     int slot() const { return slot_; }
+    Storage storage() const { return storage_; }
+    bool isGlobal() const { return storage_ == Storage::Global; }
 
     // A '&' parameter: the slot holds the caller's address rather than the
     // value, so every read and write of the name goes through it.
@@ -116,6 +124,7 @@ private:
     std::string name_;
     const Type *type_;
     int slot_;
+    Storage storage_;
     bool reference_ = false;
 };
 
@@ -693,6 +702,9 @@ struct Param {
 // in 2.x it held a variable's name and the function could fall off its end
 // returning whatever that held, and both of those are gone.
 struct Prototype {
+    Prototype() = default;
+    Prototype(std::string n, int l) : name(std::move(n)), line(l) {}
+
     std::string name;
     std::vector<const Type *> outputs;
     std::vector<Param> inputs;
@@ -716,6 +728,12 @@ public:
     Prototype &proto() { return proto_; }
     bool isCalled() const { return called_; }
     void markCalled() { called_ = true; }
+
+    // A definition the collection pass refused - a built-in's name, 'prec',
+    // or a second function of the same name. It is not a function of the
+    // program, so nothing further is said about it.
+    bool isRejected() const { return rejected_; }
+    void reject() { rejected_ = true; }
     Block &body() { return body_; }
     const Block &body() const { return body_; }
     Frame &frame() { return frame_; }
@@ -754,6 +772,7 @@ private:
     Frame frame_;
     std::vector<std::unique_ptr<Symbol>> symbols_;
     bool called_ = false;
+    bool rejected_ = false;
     int outPointerBase_ = 0;
     int resultSlot_ = -1;
 };
@@ -762,15 +781,47 @@ private:
 // written in any order.
 class Program {
 public:
-    void add(std::unique_ptr<Function> f) { functions_.push_back(std::move(f)); }
+    // Top-level order is kept, because it is meaning: a global is visible
+    // below the line that declares it and nowhere above it, and a function
+    // written above a global cannot see it. Functions themselves are not
+    // ordered this way - they are collected before any body is checked - but
+    // the checker still walks the file in order, because the interpreter
+    // creates the globals in file order too and a checker that disagreed
+    // would pass programs the run then failed.
+    void add(std::unique_ptr<Function> f) {
+        order_.push_back(Entry{true, functions_.size()});
+        functions_.push_back(std::move(f));
+    }
+
+    void addGlobal(StmtPtr declaration) {
+        order_.push_back(Entry{false, globals_.size()});
+        globals_.push_back(std::move(declaration));
+    }
+
+    struct Entry { bool isFunction; size_t index; };
 
     std::vector<std::unique_ptr<Function>> &functions() { return functions_; }
     const std::vector<std::unique_ptr<Function>> &functions() const { return functions_; }
+    std::vector<StmtPtr> &globals() { return globals_; }
+    const std::vector<Entry> &order() const { return order_; }
+
     const Function *find(const std::string &name) const;
     Function *find(const std::string &name);
 
+    // The block of eight-byte places every global lives in.
+    int addGlobalSlot() { return globalSlots_++; }
+    int globalSlots() const { return globalSlots_; }
+
+    // The frame the initializers run in: they are ordinary statements and
+    // need somewhere to compute in.
+    Function &initializer() { return initializer_; }
+
 private:
     std::vector<std::unique_ptr<Function>> functions_;
+    std::vector<StmtPtr> globals_;
+    std::vector<Entry> order_;
+    int globalSlots_ = 0;
+    Function initializer_{Prototype(), Block()};
 };
 
 }  // namespace shalimar

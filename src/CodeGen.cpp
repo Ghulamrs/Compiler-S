@@ -8,11 +8,27 @@
 namespace shalimar {
 
 std::string CodeGen::mangle(const std::string &name) {
-    return name == "main" ? "shm_user_main" : "shmf_" + name;
+    if (name == "main") return "shm_user_main";
+    // The one that has no Shalimar name: the globals' initializer.
+    if (name.empty()) return "shm_init_globals";
+    return "shmf_" + name;
 }
 
 void CodeGen::run(Program &program, const std::string &sourceName) {
     emitter_.beginModule(sourceName);
+    emitter_.defineGlobals(program.globalSlots());
+
+    // The globals are created in file order, before main() runs, which is
+    // where a global whose initializer calls a function that reads a later
+    // global still fails - a cycle rather than an ordering, and the one case
+    // the checker leaves to the run.
+    Function &initializer = program.initializer();
+    initializer.body().clear();
+    for (StmtPtr &declaration : program.globals()) {
+        initializer.body().push_back(StmtPtr(declaration.release()));
+    }
+    generate(initializer);
+
     for (std::unique_ptr<Function> &f : program.functions()) generate(*f);
     emitter_.endModule();
 }
@@ -45,24 +61,30 @@ void CodeGen::generate(Function &function) {
     }
 
     // The recursion ceiling. Its message names the function, so the name goes
-    // into the module's read-only bytes.
-    const int nameId = newBytesId();
-    emitter_.defineBytes(nameId, proto.name + std::string(1, '\0'));
-    const int limit = 256 / (static_cast<int>(proto.inputs.size()) + 1);
-    emitter_.loadBytesAddress(nameId);
-    emitter_.setArg(Slot::Wide, 2);
-    emitter_.loadIntConstant(limit < 1 ? 1 : limit);
-    emitter_.setArg(Slot::Int, 1);
-    emitter_.loadIntConstant(proto.id);
-    emitter_.setArg(Slot::Int, 0);
-    emitter_.call("shm_enter");
+    // into the module's read-only bytes. The globals' initializer is not a
+    // Shalimar function and cannot recurse, so it is left out of the count.
+    const bool counted = !proto.name.empty();
+    if (counted) {
+        const int nameId = newBytesId();
+        emitter_.defineBytes(nameId, proto.name + std::string(1, '\0'));
+        const int limit = 256 / (static_cast<int>(proto.inputs.size()) + 1);
+        emitter_.loadBytesAddress(nameId);
+        emitter_.setArg(Slot::Wide, 2);
+        emitter_.loadIntConstant(limit < 1 ? 1 : limit);
+        emitter_.setArg(Slot::Int, 1);
+        emitter_.loadIntConstant(proto.id);
+        emitter_.setArg(Slot::Int, 0);
+        emitter_.call("shm_enter");
+    }
 
     for (StmtPtr &s : function.body()) generate(*s);
 
     emitter_.label(exitLabel_);
-    emitter_.loadIntConstant(proto.id);
-    emitter_.setArg(Slot::Int, 0);
-    emitter_.call("shm_leave");
+    if (counted) {
+        emitter_.loadIntConstant(proto.id);
+        emitter_.setArg(Slot::Int, 0);
+        emitter_.call("shm_leave");
+    }
     // The result is fetched after the counter comes down, because that is a
     // call and a call does not preserve an accumulator.
     if (function.resultSlot() >= 0) {
@@ -191,12 +213,14 @@ void CodeGen::visit(RealLit &node) {
 }
 
 void CodeGen::readSymbol(const Symbol &symbol) {
-    if (symbol.isReference()) emitter_.loadThroughPointer(slotKind(symbol.type()), symbol.slot());
+    if (symbol.isGlobal()) emitter_.loadGlobal(slotKind(symbol.type()), symbol.slot());
+    else if (symbol.isReference()) emitter_.loadThroughPointer(slotKind(symbol.type()), symbol.slot());
     else emitter_.loadSlot(slotKind(symbol.type()), symbol.slot());
 }
 
 void CodeGen::writeSymbol(const Symbol &symbol) {
-    if (symbol.isReference()) emitter_.storeThroughPointer(slotKind(symbol.type()), symbol.slot());
+    if (symbol.isGlobal()) emitter_.storeGlobal(slotKind(symbol.type()), symbol.slot());
+    else if (symbol.isReference()) emitter_.storeThroughPointer(slotKind(symbol.type()), symbol.slot());
     else emitter_.storeSlot(slotKind(symbol.type()), symbol.slot());
 }
 
@@ -418,12 +442,18 @@ void CodeGen::generateCall(Call &node) {
 void CodeGen::generateBuiltin(Call &node) {
     const Builtin &fn = builtin(node.builtin());
 
-    // 'len(A)' is the first dimension, asked of the array itself.
+    // 'len(A)' is the first dimension, asked of the array itself. The axis
+    // goes in first: on a target where the accumulator is also the first
+    // argument register, loading the axis afterwards would overwrite the
+    // array it had just been put in.
     if (fn.shape == Builtin::Shape::Length) {
+        const int slot = reserve();
         evaluate(*node.arguments()[0]);
-        emitter_.setArg(Slot::Wide, 0);
+        emitter_.storeSlot(Slot::Wide, slot);
+        release();
         emitter_.loadIntConstant(0);
         emitter_.setArg(Slot::Int, 1);
+        emitter_.loadSlotIntoArg(Slot::Wide, slot, 0);
         emitter_.call("shm_array_dim");
         return;
     }
@@ -581,29 +611,33 @@ void CodeGen::visit(Assign &node) {
     // the storage already there rather than rebinding it: extents are fixed
     // at declaration, and an array may be shared by reference with a caller,
     // so swapping the storage would resize it underneath them.
+    // The value stays in its slot until the last use of it, which is the
+    // fill below. Releasing it earlier hands the same slot to the next
+    // reservation, and the source is then overwritten by the size that was
+    // measured from it.
     const int slot = reserve();
     evaluate(*node.expr());
     emitter_.storeSlot(Slot::Wide, slot);
-    release();
 
     if (node.creates()) {
         // A name being made by this assignment has no storage to copy into.
-        // The literal or the joined string is already fresh; a plain variable
-        // is not, so it is copied - 't : s' makes a copy of s.
+        // A literal or a joined string is already fresh; a plain variable is
+        // not, so it is copied - 't : s' makes a copy of s.
         if (dynamic_cast<ArrayLit *>(node.expr().get()) ||
             dynamic_cast<StrLit *>(node.expr().get()) ||
             dynamic_cast<Binary *>(node.expr().get())) {
             emitter_.loadSlot(Slot::Wide, slot);
             writeSymbol(symbol);
+            release();
             return;
         }
         // Sized to the source, then filled from it.
-        emitter_.loadSlotIntoArg(Slot::Wide, slot, 1);
+        const int dims = reserve();
         emitter_.loadIntConstant(0);
-        emitter_.setArg(Slot::Int, 0);
+        emitter_.setArg(Slot::Int, 1);
+        emitter_.loadSlotIntoArg(Slot::Wide, slot, 0);
         emitter_.call("shm_array_dim");
         emitter_.widenAccumulator();
-        const int dims = reserve();
         emitter_.storeSlot(Slot::Wide, dims);
         emitter_.loadSlotAddress(dims);
         emitter_.setArg(Slot::Wide, 2);
@@ -620,6 +654,7 @@ void CodeGen::visit(Assign &node) {
     readSymbol(symbol);
     emitter_.setArg(Slot::Wide, 0);
     emitter_.call("shm_array_fill");
+    release();
 }
 
 // The target is walked twice: once as a value and once as a destination.

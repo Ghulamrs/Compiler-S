@@ -9,10 +9,94 @@ const Type *charArray() { return Type::arrayOf(Type::charType()); }
 
 bool isText(const Type *type) { return type == charArray(); }
 
+// Which functions the program calls, found by reading the tree rather than
+// by watching the checker resolve names. The difference is the order of the
+// diagnostics: 'never called' is known before any body has been typed, and
+// that is where the app reports it.
+class CallCollector : public NodeVisitor {
+public:
+    std::vector<std::string> names;
+
+    void walk(Block &body) { for (StmtPtr &s : body) s->accept(*this); }
+    void walk(ExprPtr &e) { if (e) e->accept(*this); }
+
+    void visit(IntLit &) override {}
+    void visit(RealLit &) override {}
+    void visit(StrLit &) override {}
+    void visit(Blank &) override {}
+    void visit(Var &) override {}
+    void visit(Break &) override {}
+    void visit(Continue &) override {}
+
+    void visit(ArrayLit &n) override { for (ExprPtr &e : n.elements()) walk(e); }
+    void visit(Index &n) override { walk(n.baseRef()); walk(n.indexRef()); }
+    void visit(Dim &n) override { walk(n.base()); walk(n.axis()); }
+    void visit(Precision &n) override { walk(n.places()); }
+    void visit(Convert &n) override { walk(n.operand()); }
+    void visit(Binary &n) override { walk(n.left()); walk(n.right()); }
+
+    void visit(Call &n) override {
+        names.push_back(n.callee());
+        for (ExprPtr &e : n.arguments()) walk(e);
+    }
+
+    void visit(Declare &n) override {
+        for (ExprPtr &e : n.extents()) walk(e);
+        walk(n.initial());
+    }
+    void visit(Assign &n) override { walk(n.target()); walk(n.expr()); }
+    void visit(CompoundAssign &n) override { walk(n.target()); walk(n.expr()); }
+    void visit(MultiAssign &n) override { walk(n.call()); }
+    void visit(CallStmt &n) override { walk(n.call()); }
+    void visit(Return &n) override { for (ExprPtr &e : n.exprs()) walk(e); }
+    void visit(Print &n) override { for (ExprPtr &e : n.items()) walk(e); }
+    void visit(If &n) override {
+        for (If::Branch &b : n.branches()) { walk(b.condition); walk(b.body); }
+        if (n.hasElse()) walk(n.elseBody());
+    }
+    void visit(While &n) override { walk(n.condition()); walk(n.body()); }
+    void visit(For &n) override {
+        walk(n.start()); walk(n.end()); walk(n.step()); walk(n.body());
+    }
+};
+
 }  // namespace
+
+Symbol *Checker::declareName(const std::string &name, const Type *type) {
+    if (!inGlobalScope_) return function_->declare(name, type);
+    Symbol *symbol = new Symbol(name, type, program_->addGlobalSlot(), Symbol::Storage::Global);
+    globals_[name] = symbol;
+    laterGlobals_.erase(name);
+    return symbol;
+}
+
+const Symbol *Checker::lookup(const std::string &name) const {
+    if (const Symbol *local = scope_.lookup(name)) return local;
+    std::map<std::string, const Symbol *>::const_iterator found = globals_.find(name);
+    return found == globals_.end() ? nullptr : found->second;
+}
+
+void Checker::reportUndefined(const std::string &name) {
+    std::map<std::string, int>::const_iterator later = laterGlobals_.find(name);
+    if (later != laterGlobals_.end()) {
+        diag_.error(line_, "'" + name + "' is a global declared later, on line " +
+                               std::to_string(later->second));
+        return;
+    }
+    diag_.error(line_, "Undefined variable '" + name + "'");
+}
 
 bool Checker::check(Program &program) {
     program_ = &program;
+
+    // Every global with its line, so a name used above its declaration can
+    // say so. Each is removed as the walk reaches it.
+    for (StmtPtr &s : program.globals()) {
+        Declare &declaration = static_cast<Declare &>(*s);
+        if (!laterGlobals_.count(declaration.name())) {
+            laterGlobals_[declaration.name()] = declaration.line();
+        }
+    }
 
     // Functions are collected before any body is checked, so main() may call
     // something written after it.
@@ -22,15 +106,27 @@ bool Checker::check(Program &program) {
         if (f->proto().name == "main" && !f->proto().inputs.empty()) {
             diag_.error(f->proto().line, "main() takes no inputs");
         }
+        if (Function *existing = program.find(f->proto().name)) {
+            if (existing != f.get()) {
+                diag_.error(f->proto().line, "Function '" + f->proto().name +
+                                                 "' already defined (line " +
+                                                 std::to_string(existing->proto().line) + ")");
+                f->reject();
+                continue;
+            }
+        }
         if (findBuiltin(f->proto().name) >= 0) {
-            diag_.error(f->proto().line,
-                        "'" + f->proto().name + "' is a built-in function");
+            diag_.error(f->proto().line, "'" + f->proto().name + "' is a built-in name");
+            f->reject();
+            continue;
         }
         // The one clash contextual matching cannot resolve is a function
         // named 'prec', which is refused outright rather than left silently
         // unreachable.
         if (f->proto().name == "prec") {
-            diag_.error(f->proto().line, "'prec' cannot be a function name");
+            diag_.error(f->proto().line, "'prec' is reserved for '? prec(n)'");
+            f->reject();
+            continue;
         }
         for (const Param &parameter : f->proto().inputs) {
             refuseConstant(parameter.name, "a parameter name");
@@ -41,14 +137,42 @@ bool Checker::check(Program &program) {
     if (!entry) diag_.error(0, "No main() function defined");
     else entry->markCalled();
 
-    for (std::unique_ptr<Function> &f : program.functions()) check(*f);
-
-    for (std::unique_ptr<Function> &f : program.functions()) {
-        if (!f->isCalled()) {
-            diag_.warning(f->proto().line,
-                          "Function '" + f->proto().name + "' is defined but never called");
+    // Reported before any body is typed, which is where the app reports it -
+    // so the order of the two kinds of message matches.
+    {
+        CallCollector collector;
+        for (std::unique_ptr<Function> &f : program.functions()) collector.walk(f->body());
+        for (StmtPtr &g : program.globals()) g->accept(collector);
+        for (const std::string &name : collector.names) {
+            if (Function *called = program.find(name)) called->markCalled();
         }
     }
+    for (std::unique_ptr<Function> &f : program.functions()) {
+        if (!f->isCalled() && !f->isRejected()) {
+            diag_.warning(f->proto().line, "'" + f->proto().name + "' is never called");
+        }
+    }
+
+    // In file order, so that a function written above a global cannot see it
+    // and a global's initializer can only reach the ones above it. The
+    // interpreter creates them in this order too; while the two disagreed, a
+    // program the checker had passed could still fail at run time on a name
+    // it had accepted.
+    for (const Program::Entry &entry_ : program.order()) {
+        if (entry_.isFunction) {
+            check(*program.functions()[entry_.index]);
+            continue;
+        }
+        inGlobalScope_ = true;
+        function_ = &program.initializer();
+        scope_.clear();
+        scope_.push();
+        check(*program.globals()[entry_.index]);
+        scope_.pop();
+        function_ = nullptr;
+        inGlobalScope_ = false;
+    }
+
     return !diag_.hasErrors();
 }
 
@@ -74,7 +198,7 @@ void Checker::check(Function &function) {
 
     if (!function.proto().outputs.empty() && !alwaysReturns(function.body())) {
         diag_.error(function.proto().line,
-                    "'" + function.proto().name + "' must return on every path");
+                    "'" + function.proto().name + "' can finish without a return");
     }
 
     scope_.pop();
@@ -107,9 +231,25 @@ const Type *Checker::typeOf(ExprPtr &expr) {
     return expr->type();
 }
 
+// Every implicit conversion in the language comes through here, in both
+// directions. int and real convert into each other; a char does not convert
+// into anything without being asked, which is the wall that keeps '? c'
+// printing a letter.
 void Checker::coerce(ExprPtr &expr, const Type *to) {
-    if (!to || !expr->type() || expr->type() == to) return;
-    if (expr->type()->isArray() || to->isArray()) return;
+    const Type *from = expr->type();
+    if (!to || !from || from == to) return;
+    if (from->isArray() || to->isArray()) {
+        diag_.error(line_, "Cannot use " + from->spelling() + " where " +
+                               to->spelling() + " is required");
+        return;
+    }
+    const bool numeric = (from == Type::intType() || from == Type::realType()) &&
+                         (to == Type::intType() || to == Type::realType());
+    if (!numeric) {
+        diag_.error(line_, "Cannot use " + from->spelling() + " where " +
+                               to->spelling() + " is required");
+        return;
+    }
     ExprPtr inner(expr.release());
     expr.reset(new Convert(std::move(inner), to));
 }
@@ -127,8 +267,9 @@ const Type *Checker::common(const Type *a, const Type *b) const {
 }
 
 bool Checker::refuseConstant(const std::string &name, const char *what) {
+    (void)what;
     if (!isConstant(name)) return false;
-    diag_.error(line_, "'" + name + "' cannot be " + what);
+    diag_.error(line_, "'" + name + "' is a constant");
     return true;
 }
 
@@ -186,9 +327,9 @@ void Checker::visit(Var &node) {
         node.setType(Type::realType());
         return;
     }
-    const Symbol *symbol = scope_.lookup(node.name());
+    const Symbol *symbol = lookup(node.name());
     if (!symbol) {
-        diag_.error(line_, "Undefined variable '" + node.name() + "'");
+        reportUndefined(node.name());
         return;
     }
     node.resolve(symbol);
@@ -200,10 +341,12 @@ void Checker::visit(Index &node) {
     const Type *index = typeOf(node.indexRef());
     if (!base) return;
     if (!base->isArray()) {
-        diag_.error(line_, "Cannot index a scalar");
+        diag_.error(line_, base->spelling() + " cannot be indexed");
         return;
     }
-    if (index && index != Type::intType()) coerce(node.indexRef(), Type::intType());
+    if (index && index != Type::intType()) {
+        diag_.error(line_, "An index must be int, not " + index->spelling());
+    }
     node.setType(base->element());
 }
 
@@ -213,10 +356,11 @@ void Checker::visit(Dim &node) {
     // Asking a scalar is a type confusion rather than a rank one, so it is an
     // error where an axis the array does not have is simply -1.
     if (base && !base->isArray()) {
-        diag_.error(line_, "'." + node.spelling() + "' needs an array");
+        diag_.error(line_, "'." + node.spelling() + "' needs an array, not " +
+                               base->spelling());
     }
     if (axis && axis != Type::intType()) {
-        diag_.error(line_, "'." + node.spelling() + "' needs an int axis");
+        diag_.error(line_, "Axis must be int, not " + axis->spelling());
     }
     node.setType(Type::intType());
 }
@@ -224,7 +368,7 @@ void Checker::visit(Dim &node) {
 void Checker::visit(Precision &node) {
     const Type *places = typeOf(node.places());
     if (places && places != Type::intType()) {
-        diag_.error(line_, "prec() needs an int");
+        diag_.error(line_, "prec() needs an int, not " + places->spelling());
     }
     node.setType(Type::intType());
 }
@@ -267,6 +411,11 @@ void Checker::visit(Binary &node) {
         diag_.error(line_, std::string("'") + Binary::spelling(node.op()) +
                                "' needs scalars, got " + left->spelling() +
                                " and " + right->spelling());
+        // The operands are still fitted to each other, which is what the app
+        // does and is why a second message follows this one. Two complaints
+        // about one line read as two facts about it rather than as a repeat.
+        coerce(node.left(), common(left, right));
+        coerce(node.right(), common(left, right));
         node.setType(Type::intType());
         return;
     }
@@ -284,6 +433,8 @@ void Checker::visit(Binary &node) {
         if (left == Type::charType() || right == Type::charType()) {
             diag_.error(line_, std::string("'") + Binary::spelling(node.op()) +
                                    "' does not apply to char");
+            coerce(node.left(), common(left, right));
+            coerce(node.right(), common(left, right));
             node.setType(Type::intType());
             return;
         }
@@ -304,8 +455,8 @@ void Checker::visit(Call &node) {
         const Builtin &fn = builtin(which);
         node.resolveBuiltin(which);
         if (static_cast<int>(node.arguments().size()) != fn.arity) {
-            diag_.error(line_, "'" + node.callee() + "' takes " +
-                                   std::to_string(fn.arity) + " arguments");
+            diag_.error(line_, "'" + node.callee() + "' takes " + std::to_string(fn.arity) +
+                                   ", got " + std::to_string(node.arguments().size()));
         }
         std::vector<const Type *> given;
         for (size_t i = 0; i < node.arguments().size(); ++i) {
@@ -314,7 +465,7 @@ void Checker::visit(Call &node) {
 
         if (fn.shape == Builtin::Shape::Length) {
             if (!given.empty() && given[0] && !given[0]->isArray()) {
-                diag_.error(line_, "len() needs an array");
+                diag_.error(line_, "len() needs an array, got " + given[0]->spelling());
             }
             node.setType(Type::intType());
             return;
@@ -342,7 +493,8 @@ void Checker::visit(Call &node) {
 
     if (node.arguments().size() != proto.inputs.size()) {
         diag_.error(line_, "'" + node.callee() + "' takes " +
-                               std::to_string(proto.inputs.size()) + " arguments");
+                               std::to_string(proto.inputs.size()) + ", got " +
+                               std::to_string(node.arguments().size()));
     }
 
     for (size_t i = 0; i < node.arguments().size(); ++i) {
@@ -354,9 +506,11 @@ void Checker::visit(Call &node) {
             // A reference must be addressable and must match exactly. A
             // converted copy would silently stop being the caller's.
             if (!node.arguments()[i]->isAddressable() && !parameter.type->isArray()) {
-                diag_.error(line_, "'" + parameter.name + "' needs a variable");
+                diag_.error(line_, "Argument " + std::to_string(i + 1) + " of '" +
+                                       node.callee() + "' needs a variable");
             } else if (given != parameter.type) {
-                diag_.error(line_, "'" + parameter.name + "' must be " +
+                diag_.error(line_, "Argument " + std::to_string(i + 1) + " of '" +
+                                       node.callee() + "' must be " +
                                        parameter.type->spelling());
             }
             continue;
@@ -382,15 +536,16 @@ void Checker::visit(Call &node) {
 
 void Checker::visit(Declare &node) {
     if (refuseConstant(node.name(), "declared")) return;
-    if (scope_.definedHere(node.name())) {
-        diag_.error(line_, "'" + node.name() + "' is already declared");
+    if (scope_.definedHere(node.name()) || (inGlobalScope_ && globals_.count(node.name()))) {
+        diag_.error(line_, "Variable '" + node.name() + "' already defined");
         return;
     }
 
     const Type *type = node.declaredType();
     for (size_t i = 0; i < node.extents().size(); ++i) type = Type::arrayOf(type);
     if (!type->isWellFormed()) {
-        diag_.error(line_, "'" + node.name() + "': char is one-dimensional");
+        diag_.error(line_, "'" + node.name() + "': " + type->spelling() +
+                               " - strings are 1-D");
         type = charArray();
     }
     node.setDeclaredType(type);
@@ -398,14 +553,16 @@ void Checker::visit(Declare &node) {
     for (ExprPtr &extent : node.extents()) {
         const Type *given = typeOf(extent);
         if (given && given != Type::intType()) {
-            diag_.error(line_, "'" + node.name() + "': size must be int");
+            diag_.error(line_, "'" + node.name() + "': size must be int, not " +
+                                   given->spelling());
         }
         // A size the checker can fold is refused before the program runs; one
         // that genuinely depends on a variable is checked at run time, where
         // the message can afford to report the value it computed.
         double folded = 0.0;
         if (constantNumber(*extent, folded) && folded < 1) {
-            diag_.error(line_, "'" + node.name() + "': size must be 1 or more");
+            diag_.error(line_, "'" + node.name() + "': size must be 1 or more, got " +
+                                   number(folded));
         }
     }
     if (!node.extents().empty()) {
@@ -426,8 +583,15 @@ void Checker::visit(Declare &node) {
         }
     }
 
-    Symbol *symbol = function_->declare(node.name(), type);
-    scope_.define(node.name(), symbol);
+    Symbol *symbol = declareName(node.name(), type);
+    if (!inGlobalScope_) {
+        scope_.define(node.name(), symbol);
+        // A local of the same name as a global is legal and shadows it, but
+        // it is almost always a slip.
+        if (globals_.count(node.name())) {
+            diag_.warning(line_, "'" + node.name() + "' hides a global");
+        }
+    }
     node.resolve(symbol);
 }
 
@@ -443,7 +607,7 @@ void Checker::visit(Assign &node) {
     Var &target = static_cast<Var &>(*node.target());
     if (refuseConstant(target.name(), "assigned")) return;
 
-    const Symbol *existing = scope_.lookup(target.name());
+    const Symbol *existing = lookup(target.name());
 
     // An array literal carries its own shape, which is what lets it create an
     // array where an arbitrary expression cannot.
@@ -471,8 +635,8 @@ void Checker::visit(Assign &node) {
             diag_.error(line_, "Declare the array '" + target.name() + "' first");
             return;
         }
-        Symbol *created = function_->declare(target.name(), value);
-        scope_.define(target.name(), created);
+        Symbol *created = declareName(target.name(), value);
+        if (!inGlobalScope_) scope_.define(target.name(), created);
         existing = created;
         node.setCreates(true);
     }
@@ -520,15 +684,16 @@ void Checker::visit(MultiAssign &node) {
 
     if (node.names().size() != outputs.size()) {
         diag_.error(line_, "'" + call.callee() + "' returns " +
-                               std::to_string(outputs.size()) + " values");
+                               std::to_string(outputs.size()) + ", not " +
+                               std::to_string(node.names().size()));
         return;
     }
     for (size_t i = 0; i < node.names().size(); ++i) {
         if (refuseConstant(node.names()[i], "assigned")) return;
-        const Symbol *target = scope_.lookup(node.names()[i]);
+        const Symbol *target = lookup(node.names()[i]);
         if (!target) {
-            Symbol *created = function_->declare(node.names()[i], outputs[i]);
-            scope_.define(node.names()[i], created);
+            Symbol *created = declareName(node.names()[i], outputs[i]);
+            if (!inGlobalScope_) scope_.define(node.names()[i], created);
             target = created;
         }
         node.targets().push_back(target);
@@ -541,7 +706,8 @@ void Checker::visit(Return &node) {
     const size_t declared = function_ ? function_->proto().outputs.size() : 0;
     if (node.exprs().size() != declared) {
         diag_.error(line_, "'" + function_->proto().name + "' returns " +
-                               std::to_string(declared) + " values");
+                               std::to_string(declared) + " values, not " +
+                               std::to_string(node.exprs().size()));
     }
     for (size_t i = 0; i < node.exprs().size(); ++i) {
         typeOf(node.exprs()[i]);
@@ -555,7 +721,9 @@ void Checker::visit(Print &node) {
 
 void Checker::checkCondition(ExprPtr &expr) {
     const Type *type = typeOf(expr);
-    if (type && type->isArray()) diag_.error(line_, "A condition must be a scalar");
+    if (type && type->isArray()) {
+        diag_.error(line_, "Condition cannot be " + type->spelling());
+    }
 }
 
 void Checker::checkBlock(Block &body) {

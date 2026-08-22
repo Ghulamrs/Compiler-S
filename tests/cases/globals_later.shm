@@ -1,0 +1,6 @@
+int a : f()
+fun <int> = f() { return b }
+int b : 5
+fun <> = main() {
+  ? a b
+}

@@ -34,12 +34,19 @@ scp -q runtime/*.cpp runtime/*.h "$HOSTNAME_:$REMOTE\\runtime\\"
 ssh -n "$HOSTNAME_" "cmd /c $REMOTE\\setup.bat" | grep -q RUNTIME_BUILT || {
     echo "the runtime did not build on $HOSTNAME_" >&2; exit 2; }
 
+# A case the compiler refuses has no assembly to send, and its diagnostics
+# are the host compiler's work rather than the target's - those are covered
+# by tests/run.sh. Only cases that produce a program travel.
 names=()
+skipped=0
 for case in tests/cases/*.shm; do
     name=$(basename "$case" .shm)
     [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]] && continue
     [ -f "tests/cases/$name.expected" ] || continue
-    ./shc "$case" --target=x86_64-windows -S -o "$WORK/$name.asm" || continue
+    if ! ./shc "$case" --target=x86_64-windows -S -o "$WORK/$name.asm" >/dev/null 2>&1; then
+        skipped=$((skipped+1))
+        continue
+    fi
     names+=("$name")
 done
 
@@ -68,5 +75,5 @@ $got"
 done
 
 echo
-echo "$pass passed, $fail failed"
+echo "$pass passed, $fail failed, $skipped diagnostic-only cases not sent"
 [ $fail -eq 0 ]

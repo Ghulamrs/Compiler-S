@@ -93,6 +93,11 @@ private:
     // downstream has to consider one reaching a function boundary.
     int loopDepth_ = 0;
 
+    // A declaration may appear only at the top level of a function body. The
+    // rule keeps every local's lifetime the whole call, which is what lets
+    // the checker type a function in one pass.
+    int blockDepth_ = 0;
+
     // 'int', 'real' or 'char' at the head of a statement. The same words open
     // a conversion, which is why this asks what follows them.
     bool atDeclaration() const;

@@ -159,6 +159,31 @@ void X86_64Emitter::loadThroughPointer(Slot kind, int pointerSlot) {
                                  spelling_.reg(registerFor(kind), width)));
 }
 
+void X86_64Emitter::defineGlobals(int slots) {
+    if (slots > 0) emitGlobalBlock(slots);
+}
+
+// r11 is caller-saved in both conventions and is not an argument register in
+// either, so the block's address can be taken without disturbing anything a
+// call is about to want.
+void X86_64Emitter::loadGlobal(Slot kind, int index) {
+    instruction(spelling_.loadAddress(spelling_.dataReference(globalsLabel()),
+                                      spelling_.reg(Reg::R11, 8)));
+    const int width = widthFor(kind);
+    instruction(spelling_.binary(moveFor(kind), kind == Slot::Real ? 0 : width,
+                                 spelling_.offsetFrom(Reg::R11, 8 * index, width),
+                                 spelling_.reg(registerFor(kind), width)));
+}
+
+void X86_64Emitter::storeGlobal(Slot kind, int index) {
+    instruction(spelling_.loadAddress(spelling_.dataReference(globalsLabel()),
+                                      spelling_.reg(Reg::R11, 8)));
+    const int width = widthFor(kind);
+    instruction(spelling_.binary(moveFor(kind), kind == Slot::Real ? 0 : width,
+                                 spelling_.reg(registerFor(kind), width),
+                                 spelling_.offsetFrom(Reg::R11, 8 * index, width)));
+}
+
 void X86_64Emitter::defineBytes(int id, const std::string &bytes) {
     std::string line = bytesLabel(id) + spelling_.byteArrayHead();
     bool opened = false;

@@ -1,0 +1,12 @@
+// Assigning a string to a name that does not exist yet makes a copy of it -
+// SHALIMAR_LANGUAGE.md 7.1. The app's interpreter aliases instead, which is
+// the one place this compiler deliberately disagrees with it; see
+// docs/CONFORMANCE.md. The expected output here is written by hand for that
+// reason, and tests/record.sh must not overwrite it.
+fun <> = main() {
+  s : "hello"
+  t : s
+  t[0] : char(74)
+  ? s
+  ? t
+}

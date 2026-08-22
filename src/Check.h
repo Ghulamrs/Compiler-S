@@ -94,6 +94,19 @@ private:
     Scope scope_;
     int strings_ = 0;
 
+    // Globals as the walk reaches them, and every global with the line it is
+    // declared on until it is reached. Without the second, a name used above
+    // its declaration reports as 'Undefined variable' - true, but it sends
+    // the reader looking for a name that is in the file, spelled correctly, a
+    // few lines further down.
+    std::map<std::string, const Symbol *> globals_;
+    std::map<std::string, int> laterGlobals_;
+    bool inGlobalScope_ = false;
+
+    Symbol *declareName(const std::string &name, const Type *type);
+    const Symbol *lookup(const std::string &name) const;
+    void reportUndefined(const std::string &name);
+
     void check(Function &function);
     void check(Stmt &statement);
 

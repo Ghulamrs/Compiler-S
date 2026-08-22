@@ -98,6 +98,13 @@ public:
     virtual void storeThroughPointer(Slot kind, int pointerSlot) = 0;
     virtual void loadThroughPointer(Slot kind, int pointerSlot) = 0;
 
+    // The block every global lives in: one symbol and an offset, because
+    // that is the same three lines of assembly on every target where a
+    // symbol each would be three different ones.
+    virtual void defineGlobals(int slots) = 0;
+    virtual void loadGlobal(Slot kind, int index) = 0;
+    virtual void storeGlobal(Slot kind, int index) = 0;
+
     // Read-only bytes, named by a number the generator hands out. Written
     // numerically rather than as a quoted string: the two assemblers escape
     // differently and neither escapes everything, and a byte list has no

@@ -38,6 +38,7 @@ SOURCES := \
   src/Parser.cpp \
   src/Check.cpp \
   src/Builtin.cpp \
+  runtime/Shortest.cpp \
   src/CodeGen.cpp \
   src/Target.cpp \
   src/backend/Emitter.cpp \
@@ -48,6 +49,7 @@ SOURCES := \
   src/backend/X86_64Windows.cpp
 
 RUNTIME_SOURCES := \
+  runtime/Shortest.cpp \
   runtime/Failure.cpp \
   runtime/Numbers.cpp \
   runtime/Array.cpp \

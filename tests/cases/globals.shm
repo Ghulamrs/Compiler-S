@@ -1,0 +1,15 @@
+int counter : 0
+real scale : 2.5
+
+fun <int> = bump() {
+  counter : counter + 1
+  return counter
+}
+
+fun <> = main() {
+  ? counter scale
+  ? bump() bump() bump()
+  ? counter
+  counter : 100
+  ? counter
+}

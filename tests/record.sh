@@ -30,10 +30,18 @@ if [ ! -x "$REF" ] || [ "$SRC/Interpreter.swift" -nt "$REF" ]; then
            "$SHALIMAR/Tests/harness/main.swift" -o "$REF"
 fi
 
+# Cases whose expected output is written by hand because the app is wrong
+# about them. Re-recording one would quietly put the app's answer back.
+BY_HAND="text_copy"
+
 FILTER="${1:-}"
 for case in tests/cases/*.shm; do
     name=$(basename "$case" .shm)
     [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]] && continue
+    if [[ " $BY_HAND " == *" $name "* ]]; then
+        echo "kept $name (written by hand - see docs/CONFORMANCE.md)"
+        continue
+    fi
     "$REF" "$case" > "tests/cases/$name.expected" 2>&1 || true
     echo "recorded $name"
 done

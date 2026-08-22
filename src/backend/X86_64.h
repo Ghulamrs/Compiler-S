@@ -58,6 +58,10 @@ public:
     void storeThroughPointer(Slot kind, int pointerSlot) override;
     void loadThroughPointer(Slot kind, int pointerSlot) override;
 
+    void defineGlobals(int slots) override;
+    void loadGlobal(Slot kind, int index) override;
+    void storeGlobal(Slot kind, int index) override;
+
     void defineBytes(int id, const std::string &bytes) override;
     void loadBytesAddress(int id) override;
 
@@ -83,6 +87,10 @@ protected:
     // ELF and COFF disagree about all three.
     virtual void openConstSection() = 0;
     virtual void closeConstSection() = 0;
+    // The zero-filled block the globals live in, which ELF and COFF spell
+    // differently enough to be worth a method each.
+    virtual void emitGlobalBlock(int slots) = 0;
+    virtual std::string globalsLabel() const = 0;
 
     // Bytes the frame reserves below rbp: the slots first, then the shadow
     // area at the bottom where a callee expects to find it. The whole is

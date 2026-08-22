@@ -15,6 +15,16 @@ void X86_64LinuxEmitter::closeConstSection() {
     raw("\t.text");
 }
 
+void X86_64LinuxEmitter::emitGlobalBlock(int slots) {
+    blank();
+    raw("\t.bss");
+    raw("\t.globl\t" + globalsLabel());
+    raw("\t.align\t8");
+    raw(globalsLabel() + ":");
+    raw("\t.zero\t" + std::to_string(slots * 8));
+    raw("\t.text");
+}
+
 void X86_64LinuxEmitter::endModule() {
     if (!data_.empty()) {
         blank();

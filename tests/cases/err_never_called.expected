@@ -1,0 +1,2 @@
+Warning: line 2: 'f' is never called
+Error: line 2: 'f' can finish without a return

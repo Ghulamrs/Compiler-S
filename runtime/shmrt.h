@@ -33,6 +33,10 @@ int  shm_end(void);
 // stays the runtime's.
 void shm_user_main(void);
 
+// The globals, created in file order before main() runs. The compiler always
+// emits it, even when there are none, so the runtime can always call it.
+void shm_init_globals(void);
+
 // Which statement is executing. Set once per statement, because a runtime
 // error names the statement containing it rather than the expression: only
 // statements carry a line, and a per-expression one would need a call stack

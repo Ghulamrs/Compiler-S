@@ -1,0 +1,2 @@
+fun <int,int> = f() { return (1,2) }
+fun <> = main() { <a> : f() }

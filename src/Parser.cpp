@@ -61,12 +61,24 @@ bool Parser::startsLine(size_t at) const {
 std::unique_ptr<Program> Parser::parse() {
     std::unique_ptr<Program> program(new Program());
 
+    // Only declarations and 'fun' definitions may appear at global scope; a
+    // statement there is an error naming itself.
     while (index_ < tokens_.size() && !failed_) {
-        // Only declarations and 'fun' definitions may appear at global scope.
-        if (!at(Tok::Fun)) { failUnexpected(); return nullptr; }
-        std::unique_ptr<Function> f = parseFunction();
-        if (failed_ || !f) return nullptr;
-        program->add(std::move(f));
+        if (at(Tok::Fun)) {
+            std::unique_ptr<Function> f = parseFunction();
+            if (failed_ || !f) return nullptr;
+            program->add(std::move(f));
+            continue;
+        }
+        if (atDeclaration()) {
+            StmtPtr declaration = parseDeclaration();
+            if (failed_ || !declaration) return nullptr;
+            program->addGlobal(std::move(declaration));
+            continue;
+        }
+        if (current().kind == Tok::EndOfInput) { fail("Program ends unfinished"); return nullptr; }
+        fail("'" + spellingOf(current()) + "' must be inside a function");
+        return nullptr;
     }
     return failed_ ? nullptr : std::move(program);
 }
@@ -136,6 +148,7 @@ std::unique_ptr<Function> Parser::parseFunction() {
     }
     if (!expect(Tok::ParensClose, unexpected())) return nullptr;
 
+    blockDepth_ = 0;
     Block body = parseBlock();
     if (failed_) return nullptr;
 
@@ -145,21 +158,31 @@ std::unique_ptr<Function> Parser::parseFunction() {
 Block Parser::parseBlock() {
     Block body;
     if (!expect(Tok::BraceOpen, "Missing '{' to start block")) return body;
+    ++blockDepth_;
 
     // The loop detects end of input by the index rather than by a terminator
     // token, because tokenize() emits none.
     while (index_ < tokens_.size() && !at(Tok::BraceClose)) {
         StmtPtr s = parseStatement();
-        if (failed_) return body;
+        if (failed_) { --blockDepth_; return body; }
         if (s) body.push_back(std::move(s));
     }
+    --blockDepth_;
     if (!expect(Tok::BraceClose, "Missing '}' to close block")) return body;
     return body;
 }
 
 StmtPtr Parser::parseStatement() {
     if (at(Tok::PrintLine) || at(Tok::PrintInline)) return parsePrint();
-    if (atDeclaration()) return parseDeclaration();
+    if (atDeclaration()) {
+        if (blockDepth_ > 1) {
+            const std::string name = peek(1).kind == Tok::Identifier ? peek(1).text
+                                                                     : spellingOf(peek(1));
+            fail("'" + name + "': declare it at the top of the function");
+            return nullptr;
+        }
+        return parseDeclaration();
+    }
     if (at(Tok::If))    return parseIf();
     if (at(Tok::While)) return parseWhile();
     if (at(Tok::For))   return parseFor();
@@ -771,6 +794,12 @@ ExprPtr Parser::parsePostfix(ExprPtr base) {
                 base.reset(new Dim(std::move(base), std::move(axis), what));
             } else {
                 fail("No '." + what + "' - use .row, .col or .dim(n)");
+                return nullptr;
+            }
+            // An attribute is read-only; a following assignment says the
+            // programmer thought otherwise.
+            if (at(Tok::Assign) || at(Tok::PlusAssign) || at(Tok::MinusAssign)) {
+                fail("'." + what + "' is read-only");
                 return nullptr;
             }
             continue;

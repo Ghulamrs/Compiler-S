@@ -28,6 +28,8 @@ private:
     std::string bytesLabel(int id) const override { return ".Lshmb" + std::to_string(id); }
     void openConstSection() override;
     void closeConstSection() override;
+    void emitGlobalBlock(int slots) override;
+    std::string globalsLabel() const override { return "shm_globals"; }
 
     GnuSpelling spelling_impl_;
 };

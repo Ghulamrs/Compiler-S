@@ -54,8 +54,9 @@ public:
     virtual std::string loadAddress(const std::string &from,
                                     const std::string &dst) const = 0;
 
-    // What is at the address in a register.
+    // What is at the address in a register, and at an offset from it.
     virtual std::string indirect(Reg base, int width) const = 0;
+    virtual std::string offsetFrom(Reg base, int offset, int width) const = 0;
 
     // A frame slot: an offset upward from the stack pointer. From the stack
     // pointer rather than the base pointer because the offsets have to be
@@ -91,6 +92,7 @@ public:
     std::string widen32To64(const std::string &src, const std::string &dst) const override;
     std::string loadAddress(const std::string &from, const std::string &dst) const override;
     std::string indirect(Reg base, int width) const override;
+    std::string offsetFrom(Reg base, int offset, int width) const override;
     std::string frameSlot(int offset, int width) const override;
     std::string byteArrayHead() const override;
     std::string byteDirective() const override;
@@ -116,6 +118,7 @@ public:
     std::string widen32To64(const std::string &src, const std::string &dst) const override;
     std::string loadAddress(const std::string &from, const std::string &dst) const override;
     std::string indirect(Reg base, int width) const override;
+    std::string offsetFrom(Reg base, int offset, int width) const override;
     std::string frameSlot(int offset, int width) const override;
     std::string byteArrayHead() const override;
     std::string byteDirective() const override;

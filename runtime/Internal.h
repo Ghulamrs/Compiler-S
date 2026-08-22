@@ -6,6 +6,7 @@
 // line it is part way through, and what an array is.
 #pragma once
 
+#include "Shortest.h"
 #include "shmrt.h"
 
 #include <cstddef>
@@ -33,28 +34,6 @@ private:
 // problem is an implementation detail, and the vocabulary of a compiler's
 // internals has no place in a diagnostic aimed at someone writing a program.
 [[noreturn]] void fail(const char *message);
-
-// How a real is written when fixed notation will not do.
-//
-// Past 1e15 a double has no significant digits left to land after the point,
-// so fixed notation would print hundreds of fabricated ones - 1e300 comes out
-// as 309 characters. Those values, and the non-finite ones, keep the compact
-// spelling instead, and the compact spelling has to be the same one the app
-// prints or the two implementations disagree about what a number looks like.
-//
-// That spelling is the shortest decimal that reads back as the same double,
-// laid out positionally while the exponent allows and in exponent form after
-// - 1e15 prints as 1000000000000000.0 and 1e16 as 1e+16, with no point at all
-// on a single digit.
-class Shortest {
-public:
-    // Writes into `out`, which must hold at least 40 characters.
-    static void write(char *out, size_t size, double v);
-
-private:
-    static int shortestDigits(double v, char *digits, int &exponent);
-    static int unpack(const char *buffer, char *digits, int &exponent);
-};
 
 // An array, and the one representation the whole language uses for text too.
 //

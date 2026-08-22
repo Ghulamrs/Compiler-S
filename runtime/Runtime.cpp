@@ -74,6 +74,7 @@ void shm_leave(int32_t id) { shm::Depth::shared().leave(id); }
 
 int main(void) {
     shm_begin();
+    shm_init_globals();
     shm_user_main();
     return shm_end();
 }

@@ -30,6 +30,13 @@ void X86_64WindowsEmitter::label(int id) {
     raw(labelName(id) + ":");
 }
 
+// MASM wants a segment of its own for this, and it has to be written
+// outside _TEXT - which is why the count is kept and the block emitted when
+// the module ends rather than where it was asked for.
+void X86_64WindowsEmitter::emitGlobalBlock(int slots) {
+    globalSlots_ = slots;
+}
+
 void X86_64WindowsEmitter::openConstSection() {
     raw("CONST\tSEGMENT");
 }
@@ -49,6 +56,12 @@ void X86_64WindowsEmitter::endModule() {
 
     text_ = header + text_;
     raw("_TEXT\tENDS");
+    if (globalSlots_ > 0) {
+        blank();
+        raw("_BSS\tSEGMENT");
+        raw(globalsLabel() + "\tQWORD\t" + std::to_string(globalSlots_) + " DUP (0)");
+        raw("_BSS\tENDS");
+    }
     if (!data_.empty()) {
         blank();
         openConstSection();
