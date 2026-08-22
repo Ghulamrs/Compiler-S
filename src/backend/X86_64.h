@@ -4,8 +4,8 @@
 // axes. The Abi answers how arguments travel; the Spelling answers how an
 // instruction is written down; the derived class answers what the assembler
 // wants around the instructions - sections, symbol visibility, how a
-// procedure is opened and closed. Instruction selection is none of those and
-// lives here once.
+// procedure is opened and closed, and how a local label is named.
+// Instruction selection is none of those and lives here once.
 #pragma once
 
 #include "Emitter.h"
@@ -21,10 +21,10 @@ struct Abi {
     const Reg *intArgs;     // argument registers, in the order they fill
     int intArgCount;
 
-    // Whether argument n takes slot n in whichever file, so that spending
-    // one file's slot spends the other's. Microsoft's convention is
-    // positional and System V's is not. No call the compiler emits mixes the
-    // two kinds yet; when one does, this is the flag that decides it.
+    // Whether argument n takes slot n in whichever file, so that spending one
+    // file's slot spends the other's. Microsoft's convention is positional
+    // and System V's is not. No call the compiler emits mixes the two kinds
+    // yet; when one does, this is the flag that decides it.
     bool positional;
 
     // The caller leaves this much room below the return address for the
@@ -44,34 +44,30 @@ public:
     void loadIntConstant(int32_t value) override;
     void loadRealConstant(double value) override;
 
-    void storeIntSlot(int slot) override;
-    void loadIntSlot(int slot) override;
-    void storeRealSlot(int slot) override;
-    void loadRealSlot(int slot) override;
-
-    void setIntArg(int index) override;
-    void setRealArg(int index) override;
-    void loadIntSlotIntoArg(int slot, int index) override;
-    void loadRealSlotIntoArg(int slot, int index) override;
+    void storeSlot(Slot kind, int slot) override;
+    void loadSlot(Slot kind, int slot) override;
+    void setArg(Slot kind, int index) override;
+    void loadSlotIntoArg(Slot kind, int slot, int index) override;
 
     void callRuntime(const std::string &name) override;
+    void widenAccumulator() override;
+
+    void jump(int id) override;
+    void jumpIfZero(int id) override;
 
 protected:
     const Spelling &spelling_;
     const Abi &abi_;
 
-    // rax is the integer accumulator and xmm0 the real one, which are also
-    // where a call's result of each kind lands.
+    // rax is the integer accumulator - eax when a value is an int, rax when
+    // it is wide - and xmm0 is the real one. Both are also where a call's
+    // result of that kind lands.
     static const Reg accumulator = Reg::Ax;
     static const Reg realAccumulator = Reg::Xmm0;
-    // A scratch integer register for building a real constant. Caller-saved
-    // in both conventions and never holding anything of ours.
-    static const Reg scratch = Reg::Ax;
 
-    // The SSE argument registers. Both conventions start at xmm0 and run
-    // upward; they differ over whether an int argument spends an SSE slot,
-    // which no call here does yet.
-    static Reg sseArg(int index);
+    // How a local label is spelled, which is the one piece of control flow
+    // the two assemblers do not agree on.
+    virtual std::string labelName(int id) const = 0;
 
     // Bytes the frame reserves below rbp: the slots first, then the shadow
     // area at the bottom where a callee expects to find it. The whole is
@@ -80,8 +76,6 @@ protected:
     void setSlots(int slots);
     int frameBytes() const { return frameBytes_; }
 
-    // Slot n, as an operand. Written by the Spelling, because a memory
-    // reference is one of the things the two syntaxes disagree about.
     std::string slotOperand(int slot, int width) const;
 
     void emitPrologue();
@@ -95,6 +89,13 @@ protected:
 private:
     std::vector<std::string> externals_;
     int frameBytes_ = 0;
+
+    // Which register, which mnemonic and which width a slot's traffic uses.
+    static Reg registerFor(Slot kind);
+    static const char *moveFor(Slot kind);
+    static int widthFor(Slot kind);
+    static Reg sseArg(int index);
+    Reg argRegister(Slot kind, int index) const;
 };
 
 }  // namespace shalimar

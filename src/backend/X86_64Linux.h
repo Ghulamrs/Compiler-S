@@ -20,8 +20,12 @@ public:
     void endModule() override;
     void beginFunction(const std::string &name, int slots) override;
     void endFunction() override;
+    void label(int id) override;
 
 private:
+    // '.L' is what the GNU assembler treats as a temporary symbol on ELF.
+    std::string labelName(int id) const override { return ".Lshm" + std::to_string(id); }
+
     GnuSpelling spelling_impl_;
 };
 

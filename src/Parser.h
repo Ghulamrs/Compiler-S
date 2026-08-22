@@ -81,6 +81,13 @@ private:
     StmtPtr parseDeclaration();
     StmtPtr parseAssignment();
     StmtPtr parsePrint();
+    StmtPtr parseIf();
+    StmtPtr parseWhile();
+    StmtPtr parseFor();
+
+    // 'break' and 'continue' are refused outside a loop, so nothing
+    // downstream has to consider one reaching a function boundary.
+    int loopDepth_ = 0;
 
     // 'int', 'real' or 'char' at the head of a statement. The same words open
     // a conversion, which is why this asks what follows them.

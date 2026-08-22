@@ -24,8 +24,13 @@ public:
     void endModule() override;
     void beginFunction(const std::string &name, int slots) override;
     void endFunction() override;
+    void label(int id) override;
 
 private:
+    // MASM has no temporary-symbol convention, so a label is an ordinary name
+    // and the generator's numbering is what keeps it unique.
+    std::string labelName(int id) const override { return "Lshm" + std::to_string(id); }
+
     MasmSpelling spelling_impl_;
     std::string sourceName_;
     std::string openProcedure_;

@@ -138,4 +138,119 @@ void Checker::visit(Print &node) {
     for (ExprPtr &item : node.items()) typeOf(item);
 }
 
+// A condition may be any scalar. An array is not a scalar and is refused -
+// including a string, so 'if "a"' is an error rather than silently true.
+void Checker::checkCondition(ExprPtr &expr) {
+    const Type *type = typeOf(expr);
+    if (type && type->isArray()) {
+        diag_.error(line_, "A condition must be a scalar");
+    }
+}
+
+void Checker::checkBlock(Block &body) {
+    scope_.push();
+    for (StmtPtr &s : body) check(*s);
+    scope_.pop();
+}
+
+void Checker::visit(If &node) {
+    for (If::Branch &branch : node.branches()) {
+        checkCondition(branch.condition);
+        checkBlock(branch.body);
+    }
+    if (node.hasElse()) checkBlock(node.elseBody());
+}
+
+void Checker::visit(While &node) {
+    checkCondition(node.condition());
+    checkBlock(node.body());
+}
+
+// If every bound is int the loop runs in ints; a real anywhere widens the
+// counter and the loop runs in reals. Because the short form was expanded
+// before this decision, 'for i < 2.9' runs 0 to 1.9 and stops at 1.
+void Checker::visit(For &node) {
+    const Type *counterType = common(typeOf(node.start()), typeOf(node.end()));
+    if (node.step()) counterType = common(counterType, typeOf(node.step()));
+    if (!counterType) counterType = Type::intType();
+
+    coerce(node.start(), counterType);
+    coerce(node.end(), counterType);
+    if (node.step()) coerce(node.step(), counterType);
+
+    warnIfLoopNeverRuns(node);
+
+    const int base = function_->addHiddenSlot();
+    for (int i = 1; i < For::HiddenSlotCount; ++i) function_->addHiddenSlot();
+    node.setHiddenBase(base);
+
+    // The counter belongs to the loop: a scope of its own, so it never
+    // collides with an outer name and is gone afterwards.
+    scope_.push();
+    Symbol *counter = function_->declare(node.variable(), counterType);
+    scope_.define(node.variable(), counter);
+    node.resolve(counter);
+    checkBlock(node.body());
+    scope_.pop();
+}
+
+void Checker::visit(Break &) {}
+void Checker::visit(Continue &) {}
+
+bool Checker::constantNumber(const Expr &expr, double &value) const {
+    if (expr.isIntLiteral())  { value = static_cast<const IntLit &>(expr).value();  return true; }
+    if (expr.isRealLiteral()) { value = static_cast<const RealLit &>(expr).value(); return true; }
+    if (const Convert *conversion = dynamic_cast<const Convert *>(&expr)) {
+        return constantNumber(conversion->expr(), value);
+    }
+    const Binary *binary = dynamic_cast<const Binary *>(&expr);
+    if (!binary) return false;
+    double left = 0.0;
+    double right = 0.0;
+    if (!constantNumber(binary->lhs(), left)) return false;
+    if (!constantNumber(binary->rhs(), right)) return false;
+    switch (binary->op()) {
+    case Binary::Op::Add:      value = left + right; return true;
+    case Binary::Op::Subtract: value = left - right; return true;
+    case Binary::Op::Multiply: value = left * right; return true;
+    default: return false;
+    }
+}
+
+std::string Checker::number(double value) {
+    if (value == static_cast<double>(static_cast<long long>(value)) &&
+        value >= -9.2e18 && value <= 9.2e18) {
+        return std::to_string(static_cast<long long>(value));
+    }
+    return std::to_string(value);
+}
+
+// 'for i : 10 to 1 step 1' counts up from a start already past its end, so it
+// runs zero times - the step points away from the end rather than toward it.
+// Nothing about that is illegal, so this is a warning and the program runs.
+//
+// Only a loop whose three bounds all fold is judged. That is the case where
+// the direction is written into the source and nothing else could have been
+// meant; where a bound is computed, an empty pass may be exactly what that
+// run intends, and 'for j < v.col' over a vector - which expands to 0 to -2 -
+// is the language's own example of one.
+void Checker::warnIfLoopNeverRuns(For &node) {
+    double start = 0.0;
+    double end = 0.0;
+    double step = 1.0;
+    if (!constantNumber(*node.start(), start)) return;
+    if (!constantNumber(*node.end(), end)) return;
+    if (node.step() && !constantNumber(*node.step(), step)) return;
+
+    // Zero is refused at run time with a message of its own; it has no
+    // direction to report and would read here as a step that moves away from
+    // everything.
+    if (step == 0) return;
+    if (step > 0 ? start <= end : start >= end) return;
+
+    diag_.warning(line_, "Loop never runs: '" + node.variable() + "' starts at " +
+                             number(start) + " and step " + number(step) +
+                             " moves away from " + number(end));
+}
+
 }  // namespace shalimar

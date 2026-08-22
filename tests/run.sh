@@ -34,17 +34,24 @@ for case in tests/cases/*.shm; do
         continue
     fi
 
-    if ! ./shc "$case" -o "$OUT/$name" > "$OUT/$name.compile" 2>&1; then
-        # A case may be a diagnostic case: the compiler's own output is then
-        # what is compared, and there is no program to run.
-        if diff -q "$expected" "$OUT/$name.compile" >/dev/null 2>&1; then
+    # The compiler's own output comes first and the program's after it, which
+    # is the order the app's interpreter produces them in: it reports what the
+    # checker found and then runs. A warning therefore belongs in the recorded
+    # file above the program's first line, and a case that does not compile is
+    # compared on the diagnostics alone.
+    ./shc "$case" -o "$OUT/$name" > "$OUT/$name.compile" 2>/dev/null
+    compiled=$?
+    cp "$OUT/$name.compile" "$OUT/$name.actual"
+    if [ $compiled -ne 0 ]; then
+        if diff -u "$expected" "$OUT/$name.actual" > "$OUT/$name.diff" 2>&1; then
             pass=$((pass+1)); continue
         fi
         echo "FAIL $name (did not compile)"
+        sed -n '1,12p' "$OUT/$name.diff"
         failed+=("$name"); fail=$((fail+1)); continue
     fi
 
-    "$OUT/$name" > "$OUT/$name.actual" 2>&1
+    "$OUT/$name" >> "$OUT/$name.actual" 2>&1
     if diff -u "$expected" "$OUT/$name.actual" > "$OUT/$name.diff" 2>&1; then
         pass=$((pass+1))
     else

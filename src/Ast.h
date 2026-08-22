@@ -34,6 +34,11 @@ class Binary;
 class Declare;
 class Assign;
 class Print;
+class If;
+class While;
+class For;
+class Break;
+class Continue;
 
 class NodeVisitor {
 public:
@@ -51,6 +56,11 @@ public:
     virtual void visit(Declare &) = 0;
     virtual void visit(Assign &) = 0;
     virtual void visit(Print &) = 0;
+    virtual void visit(If &) = 0;
+    virtual void visit(While &) = 0;
+    virtual void visit(For &) = 0;
+    virtual void visit(Break &) = 0;
+    virtual void visit(Continue &) = 0;
 };
 
 class Node {
@@ -284,6 +294,110 @@ private:
     bool newline_;
 };
 
+// 'if cond { } elseif cond { } else { }'. Any number of elseif branches, at
+// most one else. The condition must be a scalar.
+class If : public Stmt {
+public:
+    struct Branch {
+        ExprPtr condition;
+        Block body;
+    };
+
+    explicit If(int line) : Stmt(line) {}
+
+    void addBranch(ExprPtr condition, Block body) {
+        branches_.push_back(Branch());
+        branches_.back().condition = std::move(condition);
+        branches_.back().body = std::move(body);
+    }
+    void setElse(Block body) { elseBody_ = std::move(body); hasElse_ = true; }
+
+    std::vector<Branch> &branches() { return branches_; }
+    Block &elseBody() { return elseBody_; }
+    bool hasElse() const { return hasElse_; }
+
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+
+private:
+    std::vector<Branch> branches_;
+    Block elseBody_;
+    bool hasElse_ = false;
+};
+
+class While : public Stmt {
+public:
+    While(ExprPtr condition, Block body, int line)
+        : Stmt(line), condition_(std::move(condition)), body_(std::move(body)) {}
+
+    ExprPtr &condition() { return condition_; }
+    Block &body() { return body_; }
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+
+private:
+    ExprPtr condition_;
+    Block body_;
+};
+
+// Both written forms arrive here. 'for i < n' is sugar and the parser expands
+// it into 'for i : 0 to n - 1', which is why 'step' rides along unchanged and
+// why nothing downstream knows the difference - including the fact that
+// 'for i < 2.9' runs 0 to 1.9 and stops at 1.
+//
+// The counter belongs to the loop: it is created in a scope of its own and is
+// gone afterwards, so it never collides with an outer name.
+class For : public Stmt {
+public:
+    For(std::string variable, ExprPtr start, ExprPtr end, ExprPtr step, Block body, int line)
+        : Stmt(line), variable_(std::move(variable)), start_(std::move(start)),
+          end_(std::move(end)), step_(std::move(step)), body_(std::move(body)) {}
+
+    const std::string &variable() const { return variable_; }
+    ExprPtr &start() { return start_; }
+    ExprPtr &end() { return end_; }
+    ExprPtr &step() { return step_; }          // may be null, meaning 1
+    Block &body() { return body_; }
+
+    const Symbol *counter() const { return counter_; }
+    void resolve(const Symbol *s) { counter_ = s; }
+    // Four hidden slots, allocated together. A loop's bounds are evaluated
+    // once and then consulted on every pass, so they have to live somewhere
+    // for the length of the loop; and the pass number is kept rather than the
+    // counter accumulated, because the interpreter computes start + n * step
+    // and a compiler that accumulated would drift from it in the last digits.
+    enum HiddenSlot { EndSlot, StepSlot, PassSlot, StartSlot, HiddenSlotCount };
+    int hidden(HiddenSlot which) const { return hiddenBase_ + which; }
+    void setHiddenBase(int base) { hiddenBase_ = base; }
+
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+
+private:
+    std::string variable_;
+    ExprPtr start_;
+    ExprPtr end_;
+    ExprPtr step_;
+    Block body_;
+    const Symbol *counter_ = nullptr;
+    int hiddenBase_ = 0;
+};
+
+// Both bind to the innermost enclosing loop and there are no labels, so
+// neither can leave two loops at once. The parser refuses one outside a loop,
+// which is why nothing downstream has to consider one arriving at function
+// level.
+class Break : public Stmt {
+public:
+    explicit Break(int line) : Stmt(line) {}
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+};
+
+// In a 'for', this still advances the counter: the step belongs to the loop,
+// not to the body, so it skips the rest of the pass rather than the pass.
+class Continue : public Stmt {
+public:
+    explicit Continue(int line) : Stmt(line) {}
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+};
+
 // ------------------------------------------------------------------- program
 
 // What a function's frame has to hold. Filled in by the checker, which is
@@ -348,6 +462,11 @@ public:
             new Symbol(name, type, frame_.addVariable())));
         return symbols_.back().get();
     }
+
+    // A place in the frame with no name: a loop's pass counter. It is a
+    // variable slot rather than an evaluation one because it has to survive
+    // the whole loop, which every expression inside it may use.
+    int addHiddenSlot() { return frame_.addVariable(); }
 
 private:
     Prototype proto_;

@@ -42,6 +42,10 @@ public:
     virtual std::string call(const std::string &target) const = 0;
     virtual std::string ret() const = 0;
 
+    // Sign-extending a 32-bit register into its 64-bit self. The two
+    // assemblers do not even agree on the mnemonic for it.
+    virtual std::string widen32To64(const std::string &src, const std::string &dst) const = 0;
+
     // A frame slot: an offset from the base pointer. MASM wants the width
     // written on the reference because the register operand may not carry
     // it; GNU puts the width on the mnemonic instead and needs none here.
@@ -64,6 +68,7 @@ public:
     std::string call(const std::string &target) const override;
     std::string ret() const override;
     std::string frameSlot(int offset, int width) const override;
+    std::string widen32To64(const std::string &src, const std::string &dst) const override;
 
 private:
     // 'l' on a four-byte mov, 'q' on an eight-byte one. An SSE mnemonic
@@ -83,6 +88,7 @@ public:
     std::string call(const std::string &target) const override;
     std::string ret() const override;
     std::string frameSlot(int offset, int width) const override;
+    std::string widen32To64(const std::string &src, const std::string &dst) const override;
 };
 
 }  // namespace shalimar

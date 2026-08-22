@@ -71,6 +71,11 @@ public:
     void visit(Declare &node) override;
     void visit(Assign &node) override;
     void visit(Print &node) override;
+    void visit(If &node) override;
+    void visit(While &node) override;
+    void visit(For &node) override;
+    void visit(Break &node) override;
+    void visit(Continue &node) override;
 
 private:
     Diagnostics &diag_;
@@ -98,6 +103,18 @@ private:
     // left operand waits in a slot while the right is evaluated.
     void deeper();
     void shallower();
+
+    // A condition may be any scalar; zero is false and anything else is true.
+    void checkCondition(ExprPtr &expr);
+    void checkBlock(Block &body);
+
+    // What the two loop-bound rules need and nothing more. Division is left
+    // out deliberately: '/' means one thing between ints and another between
+    // reals, and a folder that got that wrong would report a bound the
+    // program never uses.
+    bool constantNumber(const Expr &expr, double &value) const;
+    void warnIfLoopNeverRuns(For &node);
+    static std::string number(double value);
 };
 
 }  // namespace shalimar

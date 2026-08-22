@@ -29,4 +29,8 @@ void X86_64LinuxEmitter::endFunction() {
     emitEpilogue();
 }
 
+void X86_64LinuxEmitter::label(int id) {
+    raw(labelName(id) + ":");
+}
+
 }  // namespace shalimar

@@ -11,8 +11,29 @@ void Arm64DarwinEmitter::endModule() {
     blank();
 }
 
+// Slots are addressed upward from sp rather than downward from x29.
+//
+// A negative offset from the frame pointer needs the unscaled form of ldr and
+// str, which reaches only -256 - so the thirty-third slot of a function is
+// already out of range, and the assembler says so in terms of an index rather
+// than of a frame. A positive offset from sp is the scaled form, which
+// reaches 32760 for an eight-byte access. sp does not move inside a function
+// here, which is what makes the two addressings interchangeable.
 std::string Arm64DarwinEmitter::slotAddress(int slot) const {
-    return "[x29, #-" + std::to_string(8 * (slot + 1)) + "]";
+    return "[sp, #" + std::to_string(frameBytes_ - 8 * (slot + 1)) + "]";
+}
+
+char Arm64DarwinEmitter::registerFile(Slot kind) {
+    switch (kind) {
+    case Slot::Int:  return 'w';
+    case Slot::Real: return 'd';
+    case Slot::Wide: return 'x';
+    }
+    return 'w';
+}
+
+std::string Arm64DarwinEmitter::labelName(int id) {
+    return "Lshm" + std::to_string(id);
 }
 
 void Arm64DarwinEmitter::beginFunction(const std::string &name, int slots) {
@@ -59,42 +80,44 @@ void Arm64DarwinEmitter::loadRealConstant(double value) {
     instruction("fmov\td0, x9");
 }
 
-void Arm64DarwinEmitter::storeIntSlot(int slot) {
-    instruction("str\tw0, " + slotAddress(slot));
+void Arm64DarwinEmitter::storeSlot(Slot kind, int slot) {
+    instruction(std::string("str\t") + registerFile(kind) + "0, " + slotAddress(slot));
 }
 
-void Arm64DarwinEmitter::loadIntSlot(int slot) {
-    instruction("ldr\tw0, " + slotAddress(slot));
+void Arm64DarwinEmitter::loadSlot(Slot kind, int slot) {
+    instruction(std::string("ldr\t") + registerFile(kind) + "0, " + slotAddress(slot));
 }
 
-void Arm64DarwinEmitter::storeRealSlot(int slot) {
-    instruction("str\td0, " + slotAddress(slot));
+void Arm64DarwinEmitter::setArg(Slot kind, int index) {
+    if (index == 0) return;           // the accumulator is already register 0
+    const char file = registerFile(kind);
+    const std::string move = kind == Slot::Real ? "fmov\t" : "mov\t";
+    instruction(move + file + std::to_string(index) + ", " + file + "0");
 }
 
-void Arm64DarwinEmitter::loadRealSlot(int slot) {
-    instruction("ldr\td0, " + slotAddress(slot));
-}
-
-void Arm64DarwinEmitter::setIntArg(int index) {
-    if (index == 0) return;           // the accumulator is already w0
-    instruction("mov\tw" + std::to_string(index) + ", w0");
-}
-
-void Arm64DarwinEmitter::setRealArg(int index) {
-    if (index == 0) return;           // the accumulator is already d0
-    instruction("fmov\td" + std::to_string(index) + ", d0");
-}
-
-void Arm64DarwinEmitter::loadIntSlotIntoArg(int slot, int index) {
-    instruction("ldr\tw" + std::to_string(index) + ", " + slotAddress(slot));
-}
-
-void Arm64DarwinEmitter::loadRealSlotIntoArg(int slot, int index) {
-    instruction("ldr\td" + std::to_string(index) + ", " + slotAddress(slot));
+void Arm64DarwinEmitter::loadSlotIntoArg(Slot kind, int slot, int index) {
+    instruction(std::string("ldr\t") + registerFile(kind) + std::to_string(index) +
+                ", " + slotAddress(slot));
 }
 
 void Arm64DarwinEmitter::callRuntime(const std::string &name) {
     instruction("bl\t" + symbol(name));
+}
+
+void Arm64DarwinEmitter::widenAccumulator() {
+    instruction("sxtw\tx0, w0");
+}
+
+void Arm64DarwinEmitter::label(int id) {
+    raw(labelName(id) + ":");
+}
+
+void Arm64DarwinEmitter::jump(int id) {
+    instruction("b\t" + labelName(id));
+}
+
+void Arm64DarwinEmitter::jumpIfZero(int id) {
+    instruction("cbz\tw0, " + labelName(id));
 }
 
 }  // namespace shalimar

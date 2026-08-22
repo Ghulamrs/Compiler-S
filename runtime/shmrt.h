@@ -83,6 +83,28 @@ int32_t shm_real_or(double a, double b);
 double  shm_int_to_real(int32_t value);
 int32_t shm_real_to_int(double value);
 
+// Truthiness. A condition may be any scalar: zero is false and anything else
+// is true. An int needs no help, but a real does - 0.5 is true, and
+// converting it to an int first would make it false.
+int32_t shm_real_truth(double value);
+
+// Loop control.
+//
+// The pass number is kept and the counter recomputed from it, rather than the
+// counter being accumulated. That is what the app does, and doing anything
+// else would drift from it in the last digits of a real loop.
+//
+// The int loop's pass value is 64 bits wide on purpose. Stepping a 32-bit
+// counter can pass the end of its range where the language says the loop
+// should simply finish, and a wide value has nowhere to wrap.
+void    shm_loop_int_check(int32_t step);
+int32_t shm_loop_int_run(int64_t value, int32_t end, int32_t step);
+int64_t shm_loop_int_advance(int64_t value, int32_t step);
+
+void    shm_loop_real_check(double start, double end, double step);
+double  shm_loop_real_value(double start, double step, double pass);
+int32_t shm_loop_real_run(double value, double end, double step);
+
 // One print item: the value followed by a single space. '?' then ends the
 // line, '??' leaves it open.
 void shm_print_int(int32_t value);

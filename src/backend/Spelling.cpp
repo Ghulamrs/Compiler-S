@@ -89,6 +89,10 @@ std::string GnuSpelling::frameSlot(int offset, int) const {
     return std::to_string(offset) + "(%rbp)";
 }
 
+std::string GnuSpelling::widen32To64(const std::string &src, const std::string &dst) const {
+    return "movslq\t" + src + ", " + dst;
+}
+
 // -------------------------------------------------------------------- MASM
 
 std::string MasmSpelling::reg(Reg r, int width) const {
@@ -125,6 +129,10 @@ std::string MasmSpelling::call(const std::string &target) const {
 }
 
 std::string MasmSpelling::ret() const { return "ret"; }
+
+std::string MasmSpelling::widen32To64(const std::string &src, const std::string &dst) const {
+    return "movsxd\t" + dst + ", " + src;
+}
 
 std::string MasmSpelling::frameSlot(int offset, int width) const {
     const char *size = width == 8 ? "QWORD" : (width == 1 ? "BYTE" : "DWORD");

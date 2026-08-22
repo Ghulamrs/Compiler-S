@@ -126,6 +126,21 @@ Block Parser::parseBlock() {
 StmtPtr Parser::parseStatement() {
     if (at(Tok::PrintLine) || at(Tok::PrintInline)) return parsePrint();
     if (atDeclaration()) return parseDeclaration();
+    if (at(Tok::If))    return parseIf();
+    if (at(Tok::While)) return parseWhile();
+    if (at(Tok::For))   return parseFor();
+
+    if (at(Tok::Break) || at(Tok::Continue)) {
+        const bool isBreak = at(Tok::Break);
+        const int line = advance().line;
+        if (loopDepth_ == 0) {
+            fail(line, std::string("'") + (isBreak ? "break" : "continue") +
+                       "' outside a loop");
+            return nullptr;
+        }
+        if (isBreak) return StmtPtr(new Break(line));
+        return StmtPtr(new Continue(line));
+    }
 
     // An identifier followed by one of the four assignment spellings can only
     // begin a statement. That is the whole of how a statement boundary is
@@ -193,6 +208,94 @@ StmtPtr Parser::parseAssignment() {
         value.reset(new Binary(op, ExprPtr(new Var(name)), std::move(value)));
     }
     return StmtPtr(new Assign(ExprPtr(new Var(name)), std::move(value), line));
+}
+
+StmtPtr Parser::parseIf() {
+    const int line = current().line;
+    advance();
+
+    std::unique_ptr<If> node(new If(line));
+    ExprPtr condition = parseExpression();
+    if (failed_) return nullptr;
+    Block body = parseBlock();
+    if (failed_) return nullptr;
+    node->addBranch(std::move(condition), std::move(body));
+
+    while (at(Tok::ElseIf)) {
+        advance();
+        ExprPtr next = parseExpression();
+        if (failed_) return nullptr;
+        Block branch = parseBlock();
+        if (failed_) return nullptr;
+        node->addBranch(std::move(next), std::move(branch));
+    }
+    if (match(Tok::Else)) {
+        Block otherwise = parseBlock();
+        if (failed_) return nullptr;
+        node->setElse(std::move(otherwise));
+    }
+    return StmtPtr(node.release());
+}
+
+StmtPtr Parser::parseWhile() {
+    const int line = current().line;
+    advance();
+    ExprPtr condition = parseExpression();
+    if (failed_) return nullptr;
+    ++loopDepth_;
+    Block body = parseBlock();
+    --loopDepth_;
+    if (failed_) return nullptr;
+    return StmtPtr(new While(std::move(condition), std::move(body), line));
+}
+
+// Two written forms:
+//
+//     for i : start to end [step s]     inclusive of end
+//     for i < n [step s]                0 to n - 1
+//
+// The second is sugar for the first and is expanded here, which is why 'step'
+// rides along unchanged and why nothing downstream knows the difference. The
+// '<' needs no lookahead to disambiguate: a '<' in that position was a parse
+// error in every earlier version of the language, so nothing legal changed
+// meaning when it was given one.
+StmtPtr Parser::parseFor() {
+    const int line = current().line;
+    advance();
+
+    if (!at(Tok::Identifier)) { failUnexpected(); return nullptr; }
+    const std::string name = advance().text;
+
+    ExprPtr start;
+    ExprPtr end;
+    if (atOperator("<")) {
+        advance();
+        ExprPtr count = parseExpression();
+        if (failed_) return nullptr;
+        start.reset(new IntLit(0));
+        end.reset(new Binary(Binary::Op::Subtract, std::move(count), ExprPtr(new IntLit(1))));
+    } else {
+        if (!expect(Tok::Assign, unexpected())) return nullptr;
+        start = parseExpression();
+        if (failed_) return nullptr;
+        if (!expect(Tok::To, unexpected())) return nullptr;
+        end = parseExpression();
+        if (failed_) return nullptr;
+    }
+
+    ExprPtr step;
+    if (match(Tok::Step)) {
+        step = parseExpression();
+        if (failed_) return nullptr;
+    }
+
+    ++loopDepth_;
+    Block body = parseBlock();
+    --loopDepth_;
+    if (failed_) return nullptr;
+
+    return StmtPtr(new For(name, std::move(start), std::move(end),
+                           std::move(step), std::move(body), line));
 }
 
 // A print command must be the first token on its line. The rule's real

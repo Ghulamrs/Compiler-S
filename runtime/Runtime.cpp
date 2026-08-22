@@ -288,6 +288,45 @@ int32_t shm_real_to_int(double value) {
     return static_cast<int32_t>(truncated);
 }
 
+int32_t shm_real_truth(double value) { return value != 0 ? 1 : 0; }
+
+void shm_loop_int_check(int32_t step) {
+    if (step == 0) fail("Step value cannot be zero");
+}
+
+int32_t shm_loop_int_run(int64_t value, int32_t end, int32_t step) {
+    if (step > 0) return value <= end ? 1 : 0;
+    return value >= end ? 1 : 0;
+}
+
+int64_t shm_loop_int_advance(int64_t value, int32_t step) { return value + step; }
+
+// A bound that arrives non-finite is an error naming which one and its value.
+// That matters because such bounds come out of ordinary arithmetic:
+// 'for i : 1. to sqrt(0.-1.)', 'to 1./0.', 'to pow(10.,400.)'.
+void shm_loop_real_check(double start, double end, double step) {
+    static const char *roles[] = {"start", "end", "step"};
+    const double values[] = {start, end, step};
+    for (int i = 0; i < 3; ++i) {
+        if (std::isfinite(values[i])) continue;
+        char text[400];
+        Shortest::write(text, sizeof text, values[i]);
+        char message[440];
+        std::snprintf(message, sizeof message, "Loop %s out of range: %s", roles[i], text);
+        fail(message);
+    }
+    if (step == 0) fail("Step value cannot be zero");
+}
+
+double shm_loop_real_value(double start, double step, double pass) {
+    return start + pass * step;
+}
+
+int32_t shm_loop_real_run(double value, double end, double step) {
+    if (step > 0) return value <= end ? 1 : 0;
+    return value >= end ? 1 : 0;
+}
+
 void shm_print_int(int32_t value) { console().printInt(value); }
 
 void shm_print_real(double value) { console().printReal(value); }

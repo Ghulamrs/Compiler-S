@@ -25,6 +25,10 @@ void X86_64WindowsEmitter::endFunction() {
     openProcedure_.clear();
 }
 
+void X86_64WindowsEmitter::label(int id) {
+    raw(labelName(id) + ":");
+}
+
 void X86_64WindowsEmitter::endModule() {
     std::string header;
     header += "; " + sourceName_ + "\n";

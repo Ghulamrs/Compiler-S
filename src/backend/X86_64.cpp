@@ -20,10 +20,28 @@ const Abi &microsoftAbi() {
     return abi;
 }
 
+Reg X86_64Emitter::registerFor(Slot kind) {
+    return kind == Slot::Real ? realAccumulator : accumulator;
+}
+
+// 'movsd' moves one double and carries its own width, so it takes no suffix;
+// 'mov' takes one from the operand width.
+const char *X86_64Emitter::moveFor(Slot kind) {
+    return kind == Slot::Real ? "movsd" : "mov";
+}
+
+int X86_64Emitter::widthFor(Slot kind) {
+    return kind == Slot::Int ? 4 : 8;
+}
+
 Reg X86_64Emitter::sseArg(int index) {
     static const Reg sse[] = {Reg::Xmm0, Reg::Xmm1, Reg::Xmm2, Reg::Xmm3,
                               Reg::Xmm4, Reg::Xmm5, Reg::Xmm6, Reg::Xmm7};
     return sse[index];
+}
+
+Reg X86_64Emitter::argRegister(Slot kind, int index) const {
+    return kind == Slot::Real ? sseArg(index) : abi_.intArgs[index];
 }
 
 void X86_64Emitter::setSlots(int slots) {
@@ -41,16 +59,16 @@ std::string X86_64Emitter::slotOperand(int slot, int width) const {
 void X86_64Emitter::emitPrologue() {
     instruction(spelling_.unary("push", 8, spelling_.reg(Reg::Bp, 8)));
     instruction(spelling_.binary("mov", 8, spelling_.reg(Reg::Sp, 8), spelling_.reg(Reg::Bp, 8)));
-    const int bytes = frameBytes();
-    if (bytes > 0) {
-        instruction(spelling_.binary("sub", 8, spelling_.imm(bytes), spelling_.reg(Reg::Sp, 8)));
+    if (frameBytes_ > 0) {
+        instruction(spelling_.binary("sub", 8, spelling_.imm(frameBytes_),
+                                     spelling_.reg(Reg::Sp, 8)));
     }
 }
 
 void X86_64Emitter::emitEpilogue() {
-    const int bytes = frameBytes();
-    if (bytes > 0) {
-        instruction(spelling_.binary("add", 8, spelling_.imm(bytes), spelling_.reg(Reg::Sp, 8)));
+    if (frameBytes_ > 0) {
+        instruction(spelling_.binary("add", 8, spelling_.imm(frameBytes_),
+                                     spelling_.reg(Reg::Sp, 8)));
     }
     instruction(spelling_.unary("pop", 8, spelling_.reg(Reg::Bp, 8)));
     instruction(spelling_.ret());
@@ -64,58 +82,66 @@ void X86_64Emitter::loadIntConstant(int32_t value) {
 // instruction and saves a constant pool, a section and a relocation.
 void X86_64Emitter::loadRealConstant(double value) {
     instruction(spelling_.binary("mov", 8, spelling_.wideImm(bitsOf(value)),
-                                 spelling_.reg(scratch, 8)));
+                                 spelling_.reg(accumulator, 8)));
     // No width suffix: 'movq' between a general register and an SSE one is
     // its own mnemonic, and GNU would otherwise make it 'movqq'.
-    instruction(spelling_.binary("movq", 0, spelling_.reg(scratch, 8),
+    instruction(spelling_.binary("movq", 0, spelling_.reg(accumulator, 8),
                                  spelling_.reg(realAccumulator, 8)));
 }
 
-void X86_64Emitter::storeIntSlot(int slot) {
-    instruction(spelling_.binary("mov", 4, spelling_.reg(accumulator, 4), slotOperand(slot, 4)));
+void X86_64Emitter::storeSlot(Slot kind, int slot) {
+    const int width = widthFor(kind);
+    instruction(spelling_.binary(moveFor(kind), kind == Slot::Real ? 0 : width,
+                                 spelling_.reg(registerFor(kind), width),
+                                 slotOperand(slot, width)));
 }
 
-void X86_64Emitter::loadIntSlot(int slot) {
-    instruction(spelling_.binary("mov", 4, slotOperand(slot, 4), spelling_.reg(accumulator, 4)));
+void X86_64Emitter::loadSlot(Slot kind, int slot) {
+    const int width = widthFor(kind);
+    instruction(spelling_.binary(moveFor(kind), kind == Slot::Real ? 0 : width,
+                                 slotOperand(slot, width),
+                                 spelling_.reg(registerFor(kind), width)));
 }
 
-void X86_64Emitter::storeRealSlot(int slot) {
-    instruction(spelling_.binary("movsd", 0, spelling_.reg(realAccumulator, 8),
-                                 slotOperand(slot, 8)));
+void X86_64Emitter::setArg(Slot kind, int index) {
+    const Reg target = argRegister(kind, index);
+    if (target == registerFor(kind)) return;
+    const int width = widthFor(kind);
+    // Between two SSE registers it is 'movapd': 'movsd' would leave the upper
+    // half of the destination as it found it, which is a partial-register
+    // dependency and not what a move should mean.
+    const char *mnemonic = kind == Slot::Real ? "movapd" : "mov";
+    instruction(spelling_.binary(mnemonic, kind == Slot::Real ? 0 : width,
+                                 spelling_.reg(registerFor(kind), width),
+                                 spelling_.reg(target, width)));
 }
 
-void X86_64Emitter::loadRealSlot(int slot) {
-    instruction(spelling_.binary("movsd", 0, slotOperand(slot, 8),
-                                 spelling_.reg(realAccumulator, 8)));
-}
-
-void X86_64Emitter::loadIntSlotIntoArg(int slot, int index) {
-    instruction(spelling_.binary("mov", 4, slotOperand(slot, 4),
-                                 spelling_.reg(abi_.intArgs[index], 4)));
-}
-
-void X86_64Emitter::loadRealSlotIntoArg(int slot, int index) {
-    instruction(spelling_.binary("movsd", 0, slotOperand(slot, 8),
-                                 spelling_.reg(sseArg(index), 8)));
-}
-
-void X86_64Emitter::setIntArg(int index) {
-    const Reg target = abi_.intArgs[index];
-    if (target == accumulator) return;
-    instruction(spelling_.binary("mov", 4, spelling_.reg(accumulator, 4), spelling_.reg(target, 4)));
-}
-
-void X86_64Emitter::setRealArg(int index) {
-    const Reg target = sseArg(index);
-    if (target == realAccumulator) return;
-    instruction(spelling_.binary("movapd", 0, spelling_.reg(realAccumulator, 8),
-                                 spelling_.reg(target, 8)));
+void X86_64Emitter::loadSlotIntoArg(Slot kind, int slot, int index) {
+    const int width = widthFor(kind);
+    instruction(spelling_.binary(moveFor(kind), kind == Slot::Real ? 0 : width,
+                                 slotOperand(slot, width),
+                                 spelling_.reg(argRegister(kind, index), width)));
 }
 
 void X86_64Emitter::callRuntime(const std::string &name) {
     const std::string linkName = symbol(name);
     noteExternal(linkName);
     instruction(spelling_.call(linkName));
+}
+
+void X86_64Emitter::widenAccumulator() {
+    instruction(spelling_.widen32To64(spelling_.reg(accumulator, 4),
+                                      spelling_.reg(accumulator, 8)));
+}
+
+void X86_64Emitter::jump(int id) {
+    instruction("jmp\t" + labelName(id));
+}
+
+void X86_64Emitter::jumpIfZero(int id) {
+    instruction(spelling_.binary("test", 4, spelling_.reg(accumulator, 4),
+                                 spelling_.reg(accumulator, 4)));
+    instruction("je\t" + labelName(id));
 }
 
 void X86_64Emitter::noteExternal(const std::string &name) {

@@ -1,8 +1,9 @@
 // arm64, Mach-O, Apple's ABI.
 //
-// The integer accumulator is w0 and the real accumulator is d0, which are
-// also the first argument and the return register of each kind - so a call
-// whose only argument is the value just computed costs no move at all.
+// The integer accumulator is w0 (x0 when wide) and the real accumulator is
+// d0, which are also the first argument and the return register of each kind
+// - so a call whose only argument is the value just computed costs no move at
+// all.
 #pragma once
 
 #include "Emitter.h"
@@ -22,17 +23,17 @@ public:
     void loadIntConstant(int32_t value) override;
     void loadRealConstant(double value) override;
 
-    void storeIntSlot(int slot) override;
-    void loadIntSlot(int slot) override;
-    void storeRealSlot(int slot) override;
-    void loadRealSlot(int slot) override;
-
-    void setIntArg(int index) override;
-    void setRealArg(int index) override;
-    void loadIntSlotIntoArg(int slot, int index) override;
-    void loadRealSlotIntoArg(int slot, int index) override;
+    void storeSlot(Slot kind, int slot) override;
+    void loadSlot(Slot kind, int slot) override;
+    void setArg(Slot kind, int index) override;
+    void loadSlotIntoArg(Slot kind, int slot, int index) override;
 
     void callRuntime(const std::string &name) override;
+    void widenAccumulator() override;
+
+    void label(int id) override;
+    void jump(int id) override;
+    void jumpIfZero(int id) override;
 
 private:
     // x29 and x30 saved at the top of the frame, everything else below it.
@@ -42,6 +43,12 @@ private:
 
     // Slot n sits below the frame record, at a negative offset from x29.
     std::string slotAddress(int slot) const;
+
+    // 'w', 'x' or 'd' - which register file and width a slot's traffic uses.
+    static char registerFile(Slot kind);
+    // Mach-O treats a label beginning with 'L' as temporary, so it does not
+    // reach the symbol table.
+    static std::string labelName(int id);
 
     // A 64-bit constant into a register, sixteen bits at a time. The
     // assembler's synthetic 'mov reg, #imm' would do this for a value it can

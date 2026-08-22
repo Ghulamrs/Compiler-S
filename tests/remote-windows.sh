@@ -49,8 +49,14 @@ scp -q "$WORK"/*.asm "$HOSTNAME_:$REMOTE\\work\\"
 
 pass=0; fail=0
 for name in "${names[@]}"; do
+    # The compiler's own output is produced here and the program's over
+    # there, so they are joined in the order the recorded file has them.
+    diagnostics=$(./shc "tests/cases/$name.shm" --target=x86_64-windows -S \
+                       -o "$WORK/$name.asm" 2>/dev/null)
     got=$(ssh -n "$HOSTNAME_" "cmd /c $REMOTE\\build.bat $name" 2>&1 | \
           sed -n '/---RUN---/,$p' | tail -n +2 | sed 's/\r$//')
+    [ -n "$diagnostics" ] && got="$diagnostics
+$got"
     want=$(cat "tests/cases/$name.expected")
     if [ "$got" = "$want" ]; then
         pass=$((pass+1))
