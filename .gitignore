@@ -1,4 +1,4 @@
-build/
+obj/
 lib/
 shc
 *.o

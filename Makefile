@@ -19,7 +19,7 @@ CXXFLAGS ?= -std=c++14 -Wall -Wextra -Werror -pedantic -O2
 # happened here once and cost an hour chasing a sanitiser that had nothing to
 # find, because a clean rebuild is exactly what a sanitiser build is.
 DEPFLAGS := -MMD -MP
-BUILD    ?= build
+BUILD    ?= obj
 
 HOST := $(shell uname -s)
 ifeq ($(HOST),Darwin)
