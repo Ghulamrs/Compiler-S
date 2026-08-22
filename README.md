@@ -150,11 +150,13 @@ committed, so neither of the other machines needs Swift or the app.
 ./tests/remote-windows.sh   assemble with ml64 and run on the Windows box
 ./tests/record.sh           re-record expected output from the interpreter
 ./tests/cross.sh            finding the rest of the program in the other files
+./tests/debug.sh            stopping and stepping a program from inside itself
+./tests/linking.sh          what an object holds, and why it is a whole program
 ./tests/shortest.sh         the compact spelling of a double, against Swift
 ```
 
-The standing result, all three green: **74 cases plus 11 cross-file ones on
-the host and on Linux, 42 on Windows** - the other 32 are diagnostics, which the compiler produces on
+The standing result, all three green: **74 cases plus 11 cross-file, 19
+debugging and 12 linking ones on the host and on Linux, 42 on Windows** - the other 32 are diagnostics, which the compiler produces on
 whichever machine it runs on and the Windows box therefore never sees.
 
 `tests/remote-linux.sh` is not only a second target. It is the only thing
@@ -180,6 +182,15 @@ answer if you were not.
 
 ## Known limitations
 
+0. **A Shalimar program is a whole program and cannot be a piece of one.**
+   `shc -c` writes an ordinary object file and that object still cannot be
+   linked beside another Shalimar object or beside C: every unit exports the
+   same three startup symbols, the runtime archive owns `main`, and the
+   language has no declarations for a call across a link to be checked
+   against. This is settled rather than pending, with the evidence and what
+   would have to change in [docs/LINKING.md](docs/LINKING.md), and it is
+   checked by `tests/linking.sh` so that the page cannot quietly go out of
+   date. **Do not offer separate compilation on the grounds that `-c` exists.**
 1. **Nothing is freed.** The interpreter is garbage collected and this is
    not. A program that joins strings inside a long loop will grow. The
    alternative would have to decide who owns a row that has been handed to a

@@ -19,7 +19,7 @@ DIR=shalimar
 
 tar --no-mac-metadata -czf "${TMPDIR:-/tmp}/shm-src.tgz" \
     src runtime tests/cases tests/load tests/cross tests/debug \
-    tests/run.sh tests/cross.sh tests/debug.sh Makefile 2>/dev/null
+    tests/run.sh tests/cross.sh tests/debug.sh tests/linking.sh Makefile 2>/dev/null
 
 # A relayed tree is not a checked-out one. Everything the tarball carries is
 # removed first, and the build is done from clean - an object left behind from
@@ -31,5 +31,5 @@ scp -q -i "$KEY" "${TMPDIR:-/tmp}/shm-src.tgz" "$BOX:~/$DIR/"
 ssh -n -i "$KEY" "$BOX" "cd ~/$DIR && tar xzf shm-src.tgz 2>/dev/null && find . -name '._*' -delete && \
     chmod +x tests/run.sh && make 2>&1 | grep -E 'error|Error' ; \
     [ shc -nt src/Parser.cpp ] || { echo 'shc is older than its sources'; exit 2; } ; \
-    chmod +x tests/cross.sh tests/debug.sh && ./tests/run.sh ${1:-} && \
-    ./tests/cross.sh && ./tests/debug.sh"
+    chmod +x tests/cross.sh tests/debug.sh tests/linking.sh && ./tests/run.sh ${1:-} && \
+    ./tests/cross.sh && ./tests/debug.sh && ./tests/linking.sh"

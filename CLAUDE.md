@@ -40,6 +40,9 @@ make                      build shc and the host runtime
 ./tests/remote-linux.sh   build with real g++ and run the suite on the box
 ./tests/remote-windows.sh assemble with ml64 and run on the Windows box
 ./tests/record.sh         re-record expected output from the app's interpreter
+./tests/cross.sh          finding the rest of the program in the other files
+./tests/debug.sh          stopping a program from inside itself
+./tests/linking.sh        what an object holds, and why it is a whole program
 ```
 
 A case is `tests/cases/<name>.shm` beside `tests/cases/<name>.expected`. The

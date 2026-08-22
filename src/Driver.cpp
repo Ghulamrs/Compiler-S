@@ -309,6 +309,10 @@ int Driver::run(const std::vector<std::string> &arguments) {
     CodeGen generator(*emitter);
     generator.run(*program, input_, names);
 
+    // Whether -o was given, before the default hides it. -c needs to know:
+    // with a name it is the object's, and without one the object is the
+    // input's name with .o, which is what cc -c does.
+    const bool named = !output_.empty();
     if (output_.empty()) output_ = stem(input_);
 
     const std::string assemblyPath =
@@ -327,9 +331,15 @@ int Driver::run(const std::vector<std::string> &arguments) {
 
     if (runtimeObject_.empty()) runtimeObject_ = defaultRuntimeObject(targetName_);
 
-    std::string command = "c++ -o " + output_ + " " + assemblyPath;
-    if (!objectOnly_) command += " " + runtimeObject_;
-    else command = "c++ -c -o " + output_ + ".o " + assemblyPath;
+    // -o names the object exactly as it names the assembly under -S. It used
+    // to have ".o" put on the end of it whatever it was, so `shc f.shm -c -o
+    // f.o` wrote f.o.o - which is a nuisance by hand and fatal to anything
+    // that has to name the object again to link it.
+    std::string command;
+    if (objectOnly_)
+        command = "c++ -c -o " + (named ? output_ : output_ + ".o") + " " + assemblyPath;
+    else
+        command = "c++ -o " + output_ + " " + assemblyPath + " " + runtimeObject_;
 
     const int status = shell(command);
     std::remove(assemblyPath.c_str());
