@@ -21,7 +21,7 @@ HOSTNAME_="${SHM_WINDOWS_HOST:-windows}"
 REMOTE='C:\shalimar'
 FILTER="${1:-}"
 
-[ -x ./shc ] || { echo "no ./shc - run make first" >&2; exit 2; }
+[ -x ./shc.exe ] || { echo "no ./shc.exe - run make first" >&2; exit 2; }
 
 WORK="${TMPDIR:-/tmp}/shm-windows"
 rm -rf "$WORK"; mkdir -p "$WORK"
@@ -46,7 +46,7 @@ for case in tests/cases/*.shm tests/load/*.shm; do
     name=$(basename "$case" .shm)
     [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]] && continue
     [ -f "${case%.shm}.expected" ] || continue
-    if ! ./shc "$case" --target=x86_64-windows -S -o "$WORK/$name.asm" >/dev/null 2>&1; then
+    if ! ./shc.exe "$case" --target=x86_64-windows -S -o "$WORK/$name.asm" >/dev/null 2>&1; then
         skipped=$((skipped+1))
         continue
     fi
@@ -64,7 +64,7 @@ for i in "${!names[@]}"; do
     case="${sources[$i]}"
     # The compiler's own output is produced here and the program's over
     # there, so they are joined in the order the recorded file has them.
-    diagnostics=$(./shc "$case" --target=x86_64-windows -S \
+    diagnostics=$(./shc.exe "$case" --target=x86_64-windows -S \
                        -o "$WORK/$name.asm" 2>/dev/null)
     got=$(ssh -n "$HOSTNAME_" "cmd /c $REMOTE\\build.bat $name" 2>&1 | \
           sed -n '/---RUN---/,$p' | tail -n +2 | sed 's/\r$//')

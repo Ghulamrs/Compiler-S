@@ -17,7 +17,7 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-[ -x ./shc ] || { echo "no ./shc - run make first" >&2; exit 2; }
+[ -x ./shc.exe ] || { echo "no ./shc.exe - run make first" >&2; exit 2; }
 
 WORK="${TMPDIR:-/tmp}/shm-cross"
 rm -rf "$WORK"; mkdir -p "$WORK"
@@ -29,7 +29,7 @@ fail=0
 run() {
     local what="$1" file="$2" want="$3"
     local got
-    got=$(./shc "$file" -o "$WORK/out" 2>&1; "$WORK/out" 2>&1)
+    got=$(./shc.exe "$file" -o "$WORK/out" 2>&1; "$WORK/out" 2>&1)
     if [[ "$got" == *"$want"* ]]; then
         pass=$((pass+1))
     else
@@ -44,7 +44,7 @@ run() {
 refuse() {
     local what="$1" file="$2" want="$3"
     local got
-    got=$(./shc "$file" -o "$WORK/out" 2>&1)
+    got=$(./shc.exe "$file" -o "$WORK/out" 2>&1)
     if [[ "$got" == *"$want"* ]]; then
         pass=$((pass+1))
     else
@@ -98,7 +98,7 @@ refuse "a name two files define but nobody wants" "$WORK/spare.shl" ""
 rm "$WORK/spare.shl"
 
 # --no-search puts it back to one file.
-got=$(./shc "$WORK/together.shl" --no-search -o "$WORK/out" 2>&1)
+got=$(./shc.exe "$WORK/together.shl" --no-search -o "$WORK/out" 2>&1)
 if [[ "$got" == *"Unknown function 'area'"* ]]; then pass=$((pass+1)); else
     echo "FAIL --no-search compiles the one file alone"; fail=$((fail+1)); fi
 

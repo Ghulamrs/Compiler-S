@@ -1,6 +1,6 @@
 obj/
 lib/
-shc
+shc.exe
 *.o
 *.s
 *.asm

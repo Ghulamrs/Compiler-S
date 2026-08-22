@@ -26,10 +26,10 @@ tar --no-mac-metadata -czf "${TMPDIR:-/tmp}/shm-src.tgz" \
 # a previous relay is compiled against the previous headers, and the link
 # succeeds because the mangled names still match. That is not hypothetical: it
 # corrupted the heap here once, some way from anything that looked wrong.
-ssh -n -i "$KEY" "$BOX" "rm -rf ~/$DIR/src ~/$DIR/tests ~/$DIR/build ~/$DIR/lib ~/$DIR/shc && mkdir -p ~/$DIR"
+ssh -n -i "$KEY" "$BOX" "rm -rf ~/$DIR/src ~/$DIR/tests ~/$DIR/obj ~/$DIR/lib ~/$DIR/shc.exe && mkdir -p ~/$DIR"
 scp -q -i "$KEY" "${TMPDIR:-/tmp}/shm-src.tgz" "$BOX:~/$DIR/"
 ssh -n -i "$KEY" "$BOX" "cd ~/$DIR && tar xzf shm-src.tgz 2>/dev/null && find . -name '._*' -delete && \
     chmod +x tests/run.sh && make 2>&1 | grep -E 'error|Error' ; \
-    [ shc -nt src/Parser.cpp ] || { echo 'shc is older than its sources'; exit 2; } ; \
+    [ shc.exe -nt src/Parser.cpp ] || { echo 'shc.exe is older than its sources'; exit 2; } ; \
     chmod +x tests/cross.sh tests/debug.sh tests/linking.sh && ./tests/run.sh ${1:-} && \
     ./tests/cross.sh && ./tests/debug.sh && ./tests/linking.sh"

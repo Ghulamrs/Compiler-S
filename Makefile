@@ -1,6 +1,6 @@
 # Compiler-S: the Shalimar compiler.
 #
-#   make            build shc and the host runtime
+#   make            build shc.exe and the host runtime
 #   make test       build, then run the suite
 #   make clean
 #
@@ -70,9 +70,12 @@ DEPENDS := $(OBJECTS:.o=.d) $(RUNTIME_OBJECTS:.o=.d) $(DEBUG_RUNTIME_OBJECTS:.o=
 RUNTIME := lib/shmrt-$(TARGET).a
 DEBUG_RUNTIME := lib/shmrt-$(TARGET)-debug.a
 
-all: shc $(RUNTIME) $(DEBUG_RUNTIME)
+all: shc.exe $(RUNTIME) $(DEBUG_RUNTIME)
 
-shc: $(OBJECTS)
+# shc.exe on every machine, not only Windows. The three programs in this family
+# - RStudio, cc1 and shc - carry one name each wherever they are, and a suffix
+# that changes by platform is one more thing every script has to know.
+shc.exe: $(OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJECTS)
 
 $(BUILD)/%.o: %.cpp
@@ -97,6 +100,6 @@ test: all
 	./tests/run.sh
 
 clean:
-	rm -rf $(BUILD) shc lib
+	rm -rf $(BUILD) shc.exe lib
 
 .PHONY: all test clean

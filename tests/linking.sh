@@ -15,7 +15,7 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-[ -x ./shc ] || { echo "no ./shc - run make first" >&2; exit 2; }
+[ -x ./shc.exe ] || { echo "no ./shc.exe - run make first" >&2; exit 2; }
 
 WORK="${TMPDIR:-/tmp}/shm-linking"
 rm -rf "$WORK"; mkdir -p "$WORK"
@@ -81,7 +81,7 @@ echo "what -o names"
 # have .o appended to whatever was given, so `-c -o f.o` wrote f.o.o - a
 # nuisance by hand and fatal to anything that has to name the object again in
 # order to link it.
-ok "-c honours -o as given" ./shc "$WORK/a.shm" -c -o "$WORK/named.o"
+ok "-c honours -o as given" ./shc.exe "$WORK/a.shm" -c -o "$WORK/named.o"
 if [ -f "$WORK/named.o" ]; then
     pass=$((pass+1))
 else
@@ -97,7 +97,7 @@ fi
 
 # And without -o the object is the input's name with .o, which is what cc -c
 # does and what anything driving the compiler will expect.
-( cd "$WORK" && "$OLDPWD/shc" a.shm -c > /dev/null 2>&1 )
+( cd "$WORK" && "$OLDPWD/shc.exe" a.shm -c > /dev/null 2>&1 )
 if [ -f "$WORK/a.o" ]; then
     pass=$((pass+1))
 else
@@ -107,7 +107,7 @@ fi
 
 echo "what one object exports"
 
-./shc "$WORK/lib.shm" -c -o "$WORK/lib.o" > /dev/null 2>&1
+./shc.exe "$WORK/lib.shm" -c -o "$WORK/lib.o" > /dev/null 2>&1
 symbols=$(nm -g "$WORK/lib.o" 2>/dev/null || echo "no nm")
 
 # A user function is external and could be called from C - for a scalar the
@@ -124,8 +124,8 @@ saw "every unit exports shm_name_files" "shm_name_files" "$symbols"
 
 echo "two units in one program"
 
-./shc "$WORK/a.shm" -c -o "$WORK/a.o" > /dev/null 2>&1
-./shc "$WORK/b.shm" -c -o "$WORK/b.o" > /dev/null 2>&1
+./shc.exe "$WORK/a.shm" -c -o "$WORK/a.o" > /dev/null 2>&1
+./shc.exe "$WORK/b.shm" -c -o "$WORK/b.o" > /dev/null 2>&1
 runtime=$(ls lib/shmrt-*.a 2>/dev/null | grep -v -- -debug | head -1)
 two=$(c++ -o "$WORK/two" "$WORK/a.o" "$WORK/b.o" "$runtime" 2>&1)
 

@@ -22,7 +22,7 @@ FILTER="${1:-}"
 OUT=tests/out
 mkdir -p "$OUT"
 
-[ -x ./shc ] || { echo "no ./shc - run make first" >&2; exit 2; }
+[ -x ./shc.exe ] || { echo "no ./shc.exe - run make first" >&2; exit 2; }
 
 pass=0
 fail=0
@@ -43,7 +43,7 @@ for case in tests/cases/*.shm tests/load/*.shm; do
     # checker found and then runs. A warning therefore belongs in the recorded
     # file above the program's first line, and a case that does not compile is
     # compared on the diagnostics alone.
-    ./shc "$case" -o "$OUT/$name" > "$OUT/$name.compile" 2>/dev/null
+    ./shc.exe "$case" -o "$OUT/$name" > "$OUT/$name.compile" 2>/dev/null
     compiled=$?
     cp "$OUT/$name.compile" "$OUT/$name.actual"
     if [ $compiled -ne 0 ]; then
