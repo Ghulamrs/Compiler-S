@@ -1,0 +1,87 @@
+// Forty loops inside each other, each running once. Every loop holds four
+// hidden slots and hands out three labels, so this counts both.
+fun <> = main() {
+  int t : 0
+  for i0 : 1 to 1 {
+  for i1 : 1 to 1 {
+  for i2 : 1 to 1 {
+  for i3 : 1 to 1 {
+  for i4 : 1 to 1 {
+  for i5 : 1 to 1 {
+  for i6 : 1 to 1 {
+  for i7 : 1 to 1 {
+  for i8 : 1 to 1 {
+  for i9 : 1 to 1 {
+  for i10 : 1 to 1 {
+  for i11 : 1 to 1 {
+  for i12 : 1 to 1 {
+  for i13 : 1 to 1 {
+  for i14 : 1 to 1 {
+  for i15 : 1 to 1 {
+  for i16 : 1 to 1 {
+  for i17 : 1 to 1 {
+  for i18 : 1 to 1 {
+  for i19 : 1 to 1 {
+  for i20 : 1 to 1 {
+  for i21 : 1 to 1 {
+  for i22 : 1 to 1 {
+  for i23 : 1 to 1 {
+  for i24 : 1 to 1 {
+  for i25 : 1 to 1 {
+  for i26 : 1 to 1 {
+  for i27 : 1 to 1 {
+  for i28 : 1 to 1 {
+  for i29 : 1 to 1 {
+  for i30 : 1 to 1 {
+  for i31 : 1 to 1 {
+  for i32 : 1 to 1 {
+  for i33 : 1 to 1 {
+  for i34 : 1 to 1 {
+  for i35 : 1 to 1 {
+  for i36 : 1 to 1 {
+  for i37 : 1 to 1 {
+  for i38 : 1 to 1 {
+  for i39 : 1 to 1 {
+  t : t + 1
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+  ? t
+}

@@ -1,0 +1,9 @@
+fun <> = main() {
+  char a[16] : "apple"
+  char b[16] : "banana"
+  char c[128] : "apple"
+  ? (a = b) (a != b) (a < b) (a > b) (a <= b) (a >= b)
+  ? (a = c) (a != c) (a < c) (a > c) (a <= c) (a >= c)
+  ? (b = a) (b != a) (b < a) (b > a) (b <= a) (b >= a)
+  ? "Zoe" < "adam"
+}

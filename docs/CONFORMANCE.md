@@ -77,7 +77,22 @@ its console, so the next program in the same process starts clean. Here the
 message goes to the same stream the program's own output went to, in the same
 order, and the process ends with status 1.
 
-**More than eight arguments to one call is not compiled.** Every target here
-passes arguments in registers only, and neither has more than eight of the
-kind a Shalimar argument uses. The compiler says so in its own words rather
-than emitting something that will not work.
+**Arguments beyond the registers use a convention of this compiler's own.**
+A block of frame slots, whose address travels in a scratch register. Both
+ends of such a call are code this compiler wrote, so no platform rule is
+broken; runtime calls never reach it, because none takes more than three
+arguments and every convention here carries at least four.
+
+---
+
+## 4. Something the app does that this does not
+
+**The app's parser is exponential in the depth of nested calls.**
+`f(f(f(...)))` twenty-four deep takes its interpreter nine seconds and
+twenty-six deep does not finish, whether or not the expression is ever
+executed - so it is the parse rather than the run. `shc` compiles thirty deep
+without pausing.
+
+That is why `tests/load/nested_calls.shm` stops at twenty: the limit is the
+oracle's, not this compiler's. It is a defect in the app rather than a
+difference in the language, and it has not been reported upstream from here.

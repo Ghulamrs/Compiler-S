@@ -82,6 +82,28 @@ public:
     // it is the one that knows a call's signature.
     virtual bool positionalArguments() const = 0;
 
+    // How many arguments of each kind the registers can carry. Beyond that
+    // they travel in an overflow block - see setOverflowBlock. Reading past
+    // the end of a register table is what this replaced, and it was not a
+    // theoretical fault: a five-argument function was silently given %xmm0
+    // for its fifth argument on Windows, where the table holds four.
+    virtual int intArgCapacity() const = 0;
+    virtual int realArgCapacity() const = 0;
+
+    // Arguments the registers could not carry travel in a block of
+    // eight-byte slots in the caller's frame, whose address is handed over
+    // in a scratch register the callee reads before it does anything else.
+    //
+    // A convention of this compiler's own, not the platform's - which is
+    // allowed because both ends of such a call are code this compiler wrote.
+    // Runtime calls never overflow: none takes more than three arguments,
+    // and every convention here carries at least four. Doing it this way
+    // avoids the stack-argument rules entirely, and those are where the
+    // three platforms differ most - Apple packs a 32-bit argument into four
+    // bytes of stack where AAPCS64 gives it eight.
+    virtual void setOverflowBlock(int slot) = 0;
+    virtual void spillOverflowArgument(Slot kind, int index, int slot) = 0;
+
     // A parameter arriving in a register, put where the body will look for
     // it. Called once per parameter, immediately after beginFunction.
     virtual void spillArgument(Slot kind, int registerIndex, int slot) = 0;

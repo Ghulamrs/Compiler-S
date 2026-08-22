@@ -29,6 +29,10 @@ public:
     void loadSlotIntoArg(Slot kind, int slot, int index) override;
 
     bool positionalArguments() const override { return false; }
+    int intArgCapacity() const override { return 8; }
+    int realArgCapacity() const override { return 8; }
+    void setOverflowBlock(int slot) override;
+    void spillOverflowArgument(Slot kind, int index, int slot) override;
     void spillArgument(Slot kind, int registerIndex, int slot) override;
     void call(const std::string &name) override;
     void widenAccumulator() override;
@@ -61,10 +65,23 @@ private:
     // only -256, and an offset measured from the top of the frame would
     // depend on the frame's size - which is not known until the body has been
     // written.
-    static std::string slotAddress(int slot);
+    // The address of a slot, as an operand. A scaled load or store reaches
+    // 4095 times its own width, so a slot far enough up a large frame does
+    // not fit one - in which case the address is formed in x16 first and the
+    // operand is that. x16 is the intra-procedure-call scratch register: it
+    // belongs to the linker between calls and to us within one.
+    std::string slotAddress(int slot, int width);
+
+    // 'sub sp, sp, #n' takes twelve bits. A frame past 4095 bytes has its
+    // size built in a register instead.
+    void adjustStack(const char *op, int bytes);
+    // A constant into x16, however wide.
+    void scratchConstant(uint64_t value);
 
     // 'w', 'x' or 'd' - which register file and width a slot's traffic uses.
     static char registerFile(Slot kind);
+    static int byteWidth(Slot kind);
+    std::string globalAddress(int index, int width);
     // Mach-O treats a label beginning with 'L' as temporary, so it does not
     // reach the symbol table.
     static std::string labelName(int id);

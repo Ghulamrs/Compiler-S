@@ -23,7 +23,8 @@ const RegNames table[] = {
     {"xmm0", "xmm0", "xmm0"}, {"xmm1", "xmm1", "xmm1"},
     {"xmm2", "xmm2", "xmm2"}, {"xmm3", "xmm3", "xmm3"},
     {"xmm4", "xmm4", "xmm4"}, {"xmm5", "xmm5", "xmm5"},
-    {"xmm6", "xmm6", "xmm6"}, {"xmm7", "xmm7", "xmm7"}
+    {"xmm6", "xmm6", "xmm6"}, {"xmm7", "xmm7", "xmm7"},
+    {"xmm8", "xmm8", "xmm8"}
 };
 
 std::string hex(uint64_t value) {

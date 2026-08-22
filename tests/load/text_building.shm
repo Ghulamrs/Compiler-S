@@ -1,0 +1,23 @@
+// A string built a piece at a time in a loop, joined, compared and indexed -
+// every text operation the language has, run enough times to matter.
+fun <> = main() {
+  char s[64] : ""
+  for i < 20 {
+    s +: "ab"
+  }
+  ? s
+  ? len(s)
+  char t[64] : ""
+  t +: s
+  ? t = s
+  ? t < "b"
+  char u[8] : "abc"
+  ? u + "def"
+  int n : 0
+  for i < s.row {
+    if s[i] = char(97) {
+      n : n + 1
+    }
+  }
+  ? n
+}

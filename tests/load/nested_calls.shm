@@ -1,0 +1,9 @@
+// A call as the argument of a call, twenty deep. The evaluation slots nest with
+// the calls, which is the case that first made the generator's count and the
+// checker's estimate disagree.
+fun <int> = f(n: int) {
+  return n + 1
+}
+fun <> = main() {
+  ? f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(f(0))))))))))))))))))))
+}

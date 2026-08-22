@@ -8,6 +8,10 @@
 # which is the only claim worth making about a second implementation of a
 # language that already has one.
 #
+# Two directories: tests/cases asks whether a rule of the language is obeyed,
+# tests/load asks whether it is still obeyed when the program is large. The
+# second found two defects the first could not reach - see tests/generate.py.
+#
 #   ./tests/run.sh              every case
 #   ./tests/run.sh gcd          cases whose name contains "gcd"
 
@@ -24,11 +28,11 @@ pass=0
 fail=0
 failed=()
 
-for case in tests/cases/*.shm; do
+for case in tests/cases/*.shm tests/load/*.shm; do
     name=$(basename "$case" .shm)
     [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]] && continue
 
-    expected="tests/cases/$name.expected"
+    expected="${case%.shm}.expected"
     if [ ! -f "$expected" ]; then
         echo "SKIP $name (nothing recorded)"
         continue

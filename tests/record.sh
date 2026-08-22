@@ -35,13 +35,13 @@ fi
 BY_HAND="text_copy"
 
 FILTER="${1:-}"
-for case in tests/cases/*.shm; do
+for case in tests/cases/*.shm tests/load/*.shm; do
     name=$(basename "$case" .shm)
     [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]] && continue
     if [[ " $BY_HAND " == *" $name "* ]]; then
         echo "kept $name (written by hand - see docs/CONFORMANCE.md)"
         continue
     fi
-    "$REF" "$case" > "tests/cases/$name.expected" 2>&1 || true
+    "$REF" "$case" > "${case%.shm}.expected" 2>&1 || true
     echo "recorded $name"
 done

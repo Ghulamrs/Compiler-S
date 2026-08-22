@@ -37,17 +37,21 @@ ssh -n "$HOSTNAME_" "cmd /c $REMOTE\\setup.bat" | grep -q RUNTIME_BUILT || {
 # A case the compiler refuses has no assembly to send, and its diagnostics
 # are the host compiler's work rather than the target's - those are covered
 # by tests/run.sh. Only cases that produce a program travel.
+# Two parallel arrays rather than one associative one: the bash macOS ships
+# is 3.2, which has no 'declare -A'.
 names=()
+sources=()
 skipped=0
-for case in tests/cases/*.shm; do
+for case in tests/cases/*.shm tests/load/*.shm; do
     name=$(basename "$case" .shm)
     [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]] && continue
-    [ -f "tests/cases/$name.expected" ] || continue
+    [ -f "${case%.shm}.expected" ] || continue
     if ! ./shc "$case" --target=x86_64-windows -S -o "$WORK/$name.asm" >/dev/null 2>&1; then
         skipped=$((skipped+1))
         continue
     fi
     names+=("$name")
+    sources+=("$case")
 done
 
 [ ${#names[@]} -eq 0 ] && { echo "nothing to run"; exit 0; }
@@ -55,16 +59,18 @@ done
 scp -q "$WORK"/*.asm "$HOSTNAME_:$REMOTE\\work\\"
 
 pass=0; fail=0
-for name in "${names[@]}"; do
+for i in "${!names[@]}"; do
+    name="${names[$i]}"
+    case="${sources[$i]}"
     # The compiler's own output is produced here and the program's over
     # there, so they are joined in the order the recorded file has them.
-    diagnostics=$(./shc "tests/cases/$name.shm" --target=x86_64-windows -S \
+    diagnostics=$(./shc "$case" --target=x86_64-windows -S \
                        -o "$WORK/$name.asm" 2>/dev/null)
     got=$(ssh -n "$HOSTNAME_" "cmd /c $REMOTE\\build.bat $name" 2>&1 | \
           sed -n '/---RUN---/,$p' | tail -n +2 | sed 's/\r$//')
     [ -n "$diagnostics" ] && got="$diagnostics
 $got"
-    want=$(cat "tests/cases/$name.expected")
+    want=$(cat "${case%.shm}.expected")
     if [ "$got" = "$want" ]; then
         pass=$((pass+1))
     else

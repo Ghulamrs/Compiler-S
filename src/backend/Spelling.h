@@ -20,7 +20,11 @@ namespace shalimar {
 enum class Reg {
     Ax, Cx, Dx, Bx, Si, Di, Bp, Sp,
     R8, R9, R10, R11, R12, R13, R14, R15,
-    Xmm0, Xmm1, Xmm2, Xmm3, Xmm4, Xmm5, Xmm6, Xmm7
+    Xmm0, Xmm1, Xmm2, Xmm3, Xmm4, Xmm5, Xmm6, Xmm7,
+    // xmm8 upward carry no arguments in either convention, which is what
+    // makes one of them safe to borrow while the argument registers are
+    // still live.
+    Xmm8
 };
 
 class Spelling {

@@ -1,0 +1,32 @@
+// Two hundred numbers put in order the long way. Nothing but indexing, and a
+// great deal of it.
+fun <> = sort(v[]: int) {
+  int t : 0
+  for i < v.row {
+    for j < v.row - i - 1 {
+      if v[j] > v[j+1] {
+        t : v[j]
+        v[j] : v[j+1]
+        v[j+1] : t
+      }
+    }
+  }
+}
+
+fun <> = main() {
+  int v[200]
+  int seed : 1
+  for i < v.row {
+    seed : (seed * 31 + 17) % 1009
+    v[i] : seed
+  }
+  sort(v)
+  ? v[0] v[99] v[199]
+  int ordered : 1
+  for i : 1 to v.row - 1 {
+    if v[i-1] > v[i] {
+      ordered : 0
+    }
+  }
+  ? ordered
+}

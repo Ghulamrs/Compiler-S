@@ -1,0 +1,410 @@
+// Two hundred elseif branches in one function: a label apiece, and a jump from
+// each to the same end.
+fun <int> = pick(n: int) {
+  if n = 0 {
+    return 0
+  } elseif n = 1 {
+    return 1
+  } elseif n = 2 {
+    return 4
+  } elseif n = 3 {
+    return 9
+  } elseif n = 4 {
+    return 16
+  } elseif n = 5 {
+    return 25
+  } elseif n = 6 {
+    return 36
+  } elseif n = 7 {
+    return 49
+  } elseif n = 8 {
+    return 64
+  } elseif n = 9 {
+    return 81
+  } elseif n = 10 {
+    return 100
+  } elseif n = 11 {
+    return 121
+  } elseif n = 12 {
+    return 144
+  } elseif n = 13 {
+    return 169
+  } elseif n = 14 {
+    return 196
+  } elseif n = 15 {
+    return 225
+  } elseif n = 16 {
+    return 256
+  } elseif n = 17 {
+    return 289
+  } elseif n = 18 {
+    return 324
+  } elseif n = 19 {
+    return 361
+  } elseif n = 20 {
+    return 400
+  } elseif n = 21 {
+    return 441
+  } elseif n = 22 {
+    return 484
+  } elseif n = 23 {
+    return 529
+  } elseif n = 24 {
+    return 576
+  } elseif n = 25 {
+    return 625
+  } elseif n = 26 {
+    return 676
+  } elseif n = 27 {
+    return 729
+  } elseif n = 28 {
+    return 784
+  } elseif n = 29 {
+    return 841
+  } elseif n = 30 {
+    return 900
+  } elseif n = 31 {
+    return 961
+  } elseif n = 32 {
+    return 1024
+  } elseif n = 33 {
+    return 1089
+  } elseif n = 34 {
+    return 1156
+  } elseif n = 35 {
+    return 1225
+  } elseif n = 36 {
+    return 1296
+  } elseif n = 37 {
+    return 1369
+  } elseif n = 38 {
+    return 1444
+  } elseif n = 39 {
+    return 1521
+  } elseif n = 40 {
+    return 1600
+  } elseif n = 41 {
+    return 1681
+  } elseif n = 42 {
+    return 1764
+  } elseif n = 43 {
+    return 1849
+  } elseif n = 44 {
+    return 1936
+  } elseif n = 45 {
+    return 2025
+  } elseif n = 46 {
+    return 2116
+  } elseif n = 47 {
+    return 2209
+  } elseif n = 48 {
+    return 2304
+  } elseif n = 49 {
+    return 2401
+  } elseif n = 50 {
+    return 2500
+  } elseif n = 51 {
+    return 2601
+  } elseif n = 52 {
+    return 2704
+  } elseif n = 53 {
+    return 2809
+  } elseif n = 54 {
+    return 2916
+  } elseif n = 55 {
+    return 3025
+  } elseif n = 56 {
+    return 3136
+  } elseif n = 57 {
+    return 3249
+  } elseif n = 58 {
+    return 3364
+  } elseif n = 59 {
+    return 3481
+  } elseif n = 60 {
+    return 3600
+  } elseif n = 61 {
+    return 3721
+  } elseif n = 62 {
+    return 3844
+  } elseif n = 63 {
+    return 3969
+  } elseif n = 64 {
+    return 4096
+  } elseif n = 65 {
+    return 4225
+  } elseif n = 66 {
+    return 4356
+  } elseif n = 67 {
+    return 4489
+  } elseif n = 68 {
+    return 4624
+  } elseif n = 69 {
+    return 4761
+  } elseif n = 70 {
+    return 4900
+  } elseif n = 71 {
+    return 5041
+  } elseif n = 72 {
+    return 5184
+  } elseif n = 73 {
+    return 5329
+  } elseif n = 74 {
+    return 5476
+  } elseif n = 75 {
+    return 5625
+  } elseif n = 76 {
+    return 5776
+  } elseif n = 77 {
+    return 5929
+  } elseif n = 78 {
+    return 6084
+  } elseif n = 79 {
+    return 6241
+  } elseif n = 80 {
+    return 6400
+  } elseif n = 81 {
+    return 6561
+  } elseif n = 82 {
+    return 6724
+  } elseif n = 83 {
+    return 6889
+  } elseif n = 84 {
+    return 7056
+  } elseif n = 85 {
+    return 7225
+  } elseif n = 86 {
+    return 7396
+  } elseif n = 87 {
+    return 7569
+  } elseif n = 88 {
+    return 7744
+  } elseif n = 89 {
+    return 7921
+  } elseif n = 90 {
+    return 8100
+  } elseif n = 91 {
+    return 8281
+  } elseif n = 92 {
+    return 8464
+  } elseif n = 93 {
+    return 8649
+  } elseif n = 94 {
+    return 8836
+  } elseif n = 95 {
+    return 9025
+  } elseif n = 96 {
+    return 9216
+  } elseif n = 97 {
+    return 9409
+  } elseif n = 98 {
+    return 9604
+  } elseif n = 99 {
+    return 9801
+  } elseif n = 100 {
+    return 10000
+  } elseif n = 101 {
+    return 10201
+  } elseif n = 102 {
+    return 10404
+  } elseif n = 103 {
+    return 10609
+  } elseif n = 104 {
+    return 10816
+  } elseif n = 105 {
+    return 11025
+  } elseif n = 106 {
+    return 11236
+  } elseif n = 107 {
+    return 11449
+  } elseif n = 108 {
+    return 11664
+  } elseif n = 109 {
+    return 11881
+  } elseif n = 110 {
+    return 12100
+  } elseif n = 111 {
+    return 12321
+  } elseif n = 112 {
+    return 12544
+  } elseif n = 113 {
+    return 12769
+  } elseif n = 114 {
+    return 12996
+  } elseif n = 115 {
+    return 13225
+  } elseif n = 116 {
+    return 13456
+  } elseif n = 117 {
+    return 13689
+  } elseif n = 118 {
+    return 13924
+  } elseif n = 119 {
+    return 14161
+  } elseif n = 120 {
+    return 14400
+  } elseif n = 121 {
+    return 14641
+  } elseif n = 122 {
+    return 14884
+  } elseif n = 123 {
+    return 15129
+  } elseif n = 124 {
+    return 15376
+  } elseif n = 125 {
+    return 15625
+  } elseif n = 126 {
+    return 15876
+  } elseif n = 127 {
+    return 16129
+  } elseif n = 128 {
+    return 16384
+  } elseif n = 129 {
+    return 16641
+  } elseif n = 130 {
+    return 16900
+  } elseif n = 131 {
+    return 17161
+  } elseif n = 132 {
+    return 17424
+  } elseif n = 133 {
+    return 17689
+  } elseif n = 134 {
+    return 17956
+  } elseif n = 135 {
+    return 18225
+  } elseif n = 136 {
+    return 18496
+  } elseif n = 137 {
+    return 18769
+  } elseif n = 138 {
+    return 19044
+  } elseif n = 139 {
+    return 19321
+  } elseif n = 140 {
+    return 19600
+  } elseif n = 141 {
+    return 19881
+  } elseif n = 142 {
+    return 20164
+  } elseif n = 143 {
+    return 20449
+  } elseif n = 144 {
+    return 20736
+  } elseif n = 145 {
+    return 21025
+  } elseif n = 146 {
+    return 21316
+  } elseif n = 147 {
+    return 21609
+  } elseif n = 148 {
+    return 21904
+  } elseif n = 149 {
+    return 22201
+  } elseif n = 150 {
+    return 22500
+  } elseif n = 151 {
+    return 22801
+  } elseif n = 152 {
+    return 23104
+  } elseif n = 153 {
+    return 23409
+  } elseif n = 154 {
+    return 23716
+  } elseif n = 155 {
+    return 24025
+  } elseif n = 156 {
+    return 24336
+  } elseif n = 157 {
+    return 24649
+  } elseif n = 158 {
+    return 24964
+  } elseif n = 159 {
+    return 25281
+  } elseif n = 160 {
+    return 25600
+  } elseif n = 161 {
+    return 25921
+  } elseif n = 162 {
+    return 26244
+  } elseif n = 163 {
+    return 26569
+  } elseif n = 164 {
+    return 26896
+  } elseif n = 165 {
+    return 27225
+  } elseif n = 166 {
+    return 27556
+  } elseif n = 167 {
+    return 27889
+  } elseif n = 168 {
+    return 28224
+  } elseif n = 169 {
+    return 28561
+  } elseif n = 170 {
+    return 28900
+  } elseif n = 171 {
+    return 29241
+  } elseif n = 172 {
+    return 29584
+  } elseif n = 173 {
+    return 29929
+  } elseif n = 174 {
+    return 30276
+  } elseif n = 175 {
+    return 30625
+  } elseif n = 176 {
+    return 30976
+  } elseif n = 177 {
+    return 31329
+  } elseif n = 178 {
+    return 31684
+  } elseif n = 179 {
+    return 32041
+  } elseif n = 180 {
+    return 32400
+  } elseif n = 181 {
+    return 32761
+  } elseif n = 182 {
+    return 33124
+  } elseif n = 183 {
+    return 33489
+  } elseif n = 184 {
+    return 33856
+  } elseif n = 185 {
+    return 34225
+  } elseif n = 186 {
+    return 34596
+  } elseif n = 187 {
+    return 34969
+  } elseif n = 188 {
+    return 35344
+  } elseif n = 189 {
+    return 35721
+  } elseif n = 190 {
+    return 36100
+  } elseif n = 191 {
+    return 36481
+  } elseif n = 192 {
+    return 36864
+  } elseif n = 193 {
+    return 37249
+  } elseif n = 194 {
+    return 37636
+  } elseif n = 195 {
+    return 38025
+  } elseif n = 196 {
+    return 38416
+  } elseif n = 197 {
+    return 38809
+  } elseif n = 198 {
+    return 39204
+  } elseif n = 199 {
+    return 39601
+  } else {
+    return -1
+  }
+}
+fun <> = main() {
+  ? pick(7) pick(150) pick(999)
+}

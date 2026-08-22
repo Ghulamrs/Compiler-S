@@ -1,0 +1,58 @@
+// More arguments than the registers can carry, in every shape the language can
+// write one: plain, mixed with reals, by reference, and a function with four
+// outputs. Microsoft's convention carries four and System V's six, so a
+// five-argument function already overflows on one of the three - and used to be
+// handed a register that was not in the table.
+fun <int> = five(a: int, b: int, c: int, d: int, e2: int) {
+  return a + b*10 + c*100 + d*1000 + e2*10000
+}
+
+fun <real> = ten(a: int, x: real, b: int, y: real, c: int, z: real,
+                 d: int, w: real, e2: int, v: real) {
+  return real(a + b + c + d + e2) + x + y + z + w + v
+}
+
+fun <int,int,int,int> = four(n: int) {
+  return (n, n*2, n*3, n*4)
+}
+
+fun <> = bump5(&a: int, &b: int, &c: int, &d: int, &e2: int) {
+  a : a + 1
+  b : b + 2
+  c : c + 3
+  d : d + 4
+  e2 : e2 + 5
+}
+
+fun <int> = twelve(a: int, b: int, c: int, d: int, e2: int, f: int,
+                   g: int, h: int, i: int, j: int, k: int, l: int) {
+  return a+b+c+d+e2+f+g+h+i+j+k+l
+}
+
+fun <> = fillrow(m[][]: real, r: int, a: real, b: real, c: real,
+                 d: real, e2: real) {
+  m[r][0] : a
+  m[r][1] : b
+  m[r][2] : c
+  m[r][3] : d
+  m[r][4] : e2
+}
+
+fun <> = main() {
+  ? five(1,2,3,4,5)
+  ? ten(1, 0.5, 2, 0.25, 3, 0.125, 4, 0.0625, 5, 0.03125)
+  <p,q,r,s> : four(3)
+  ? p q r s
+  int a : 10
+  int b : 20
+  int c : 30
+  int d : 40
+  int e2 : 50
+  bump5(a,b,c,d,e2)
+  ? a b c d e2
+  ? twelve(1,2,3,4,5,6,7,8,9,10,11,12)
+  real m[2][5]
+  fillrow(m, 0, 1.0, 2.0, 3.0, 4.0, 5.0)
+  fillrow(m, 1, 6.0, 7.0, 8.0, 9.0, 10.0)
+  ? m
+}

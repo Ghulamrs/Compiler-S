@@ -43,20 +43,27 @@ void CodeGen::generate(Function &function) {
 
     emitter_.beginFunction(mangle(proto.name));
 
-    // Parameters come first and in order, so argument n goes to slot n. A
+    // Parameters come first and in order, so argument n goes to slot n; the
+    // addresses of the outputs follow when there is more than one. A
     // reference parameter's slot holds the caller's address rather than the
     // value, which is why it is spilled wide whatever the parameter's type.
-    for (size_t i = 0; i < proto.inputs.size(); ++i) {
-        const Slot kind = proto.inputs[i].byReference ? Slot::Wide
-                                                      : slotKind(proto.inputs[i].type);
-        emitter_.spillArgument(kind, registerIndex(proto, i), static_cast<int>(i));
-    }
-    // Then the addresses of the outputs, when there is more than one.
-    if (proto.returnsByPointer()) {
-        for (size_t i = 0; i < proto.outputs.size(); ++i) {
-            emitter_.spillArgument(Slot::Wide,
-                                   registerIndex(proto, proto.inputs.size() + i),
-                                   function.outPointerBase() + static_cast<int>(i));
+    //
+    // Every argument that came in a register is spilled before any that came
+    // in the block, because unpacking the block needs a register to borrow
+    // and at this point the argument registers are all still live.
+    const std::vector<Place> places = planArguments(proto);
+    for (int pass = 0; pass < 2; ++pass) {
+        for (size_t i = 0; i < places.size(); ++i) {
+            if (places[i].overflow != (pass == 1)) continue;
+            const int slot = i < proto.inputs.size()
+                                 ? static_cast<int>(i)
+                                 : function.outPointerBase() +
+                                       static_cast<int>(i - proto.inputs.size());
+            if (places[i].overflow) {
+                emitter_.spillOverflowArgument(places[i].kind, places[i].index, slot);
+            } else {
+                emitter_.spillArgument(places[i].kind, places[i].index, slot);
+            }
         }
     }
 
@@ -94,23 +101,45 @@ void CodeGen::generate(Function &function) {
     current_ = nullptr;
 }
 
-int CodeGen::registerIndex(const Prototype &proto, size_t position) const {
-    if (emitter_.positionalArguments()) return static_cast<int>(position);
+// Arguments in order: the declared inputs, then one pointer for each output
+// when there is more than one. Microsoft's convention is positional, so
+// spending an integer slot spends the matching SSE one; System V's and
+// Apple's keep two counts. Whatever the registers cannot take goes into the
+// overflow block, numbered in argument order.
+std::vector<CodeGen::Place> CodeGen::planArguments(const Prototype &proto) const {
+    std::vector<Slot> kinds;
+    for (const Param &parameter : proto.inputs) {
+        kinds.push_back(parameter.byReference || parameter.type->isArray()
+                            ? Slot::Wide : slotKind(parameter.type));
+    }
+    if (proto.returnsByPointer()) {
+        for (size_t i = 0; i < proto.outputs.size(); ++i) kinds.push_back(Slot::Wide);
+    }
 
-    // Count the arguments of the same file that come before it. An output
-    // pointer is an integer whatever it points at.
-    const bool wantReal = position < proto.inputs.size() &&
-                          !proto.inputs[position].byReference &&
-                          isReal(proto.inputs[position].type);
-    int index = 0;
-    for (size_t i = 0; i < position && i < proto.inputs.size(); ++i) {
-        const bool isRealArg = !proto.inputs[i].byReference && isReal(proto.inputs[i].type);
-        if (isRealArg == wantReal) ++index;
+    std::vector<Place> places;
+    int ints = 0;
+    int reals = 0;
+    int positional = 0;
+    int overflow = 0;
+    for (Slot kind : kinds) {
+        const bool real = kind == Slot::Real;
+        const int capacity = real ? emitter_.realArgCapacity() : emitter_.intArgCapacity();
+        int index = 0;
+        bool fits = false;
+        if (emitter_.positionalArguments()) {
+            fits = positional < capacity;
+            index = positional;
+            if (fits) ++positional;
+        } else {
+            int &count = real ? reals : ints;
+            fits = count < capacity;
+            index = count;
+            if (fits) ++count;
+        }
+        if (fits) places.push_back(Place{kind, false, index});
+        else places.push_back(Place{kind, true, overflow++});
     }
-    if (position >= proto.inputs.size() && !wantReal) {
-        index += static_cast<int>(position - proto.inputs.size());
-    }
-    return index;
+    return places;
 }
 
 void CodeGen::generate(Stmt &statement) {
@@ -354,7 +383,6 @@ void CodeGen::visit(Binary &node) {
     evaluate(node.lhs());
     store(operands, slot);
     evaluate(node.rhs());
-    release();
 
     // Descending order: argument 1 is taken from the accumulator, which
     // argument 0 would otherwise have overwritten on a target where the two
@@ -367,18 +395,24 @@ void CodeGen::visit(Binary &node) {
     // answers that is - so one runtime entry point serves all six.
     if (operands->isArray()) {
         if (node.op() == Binary::Op::Add) {
+            release();
             emitter_.call("shm_text_concat");
             return;
         }
         emitter_.call("shm_text_compare");
-        emitter_.setArg(Slot::Int, 0);
+        // The answer is parked before the zero is loaded. On a target where
+        // the accumulator is also the first argument register, loading the
+        // zero would otherwise destroy the very number being compared - and
+        // it did: 't < "b"' answered 0 for every pair of strings.
+        emitter_.storeSlot(Slot::Int, slot);
         emitter_.loadIntConstant(0);
         emitter_.setArg(Slot::Int, 1);
-        // The comparison's answer is in argument 0 and zero is in argument 1,
-        // which is the order the int comparison wants.
+        emitter_.loadSlotIntoArg(Slot::Int, slot, 0);
+        release();
         emitter_.call(Binary::runtimeFor(node.op(), Type::intType()));
         return;
     }
+    release();
     emitter_.call(Binary::runtimeFor(node.op(), operands));
 }
 
@@ -388,6 +422,20 @@ void CodeGen::visit(Binary &node) {
 void CodeGen::generateCall(Call &node) {
     const Prototype &proto = *node.prototype();
     const size_t count = node.arguments().size();
+    const std::vector<Place> places = planArguments(proto);
+
+    // The overflow block is reserved before anything else, so that its slots
+    // are next to each other: the callee is handed one address and counts
+    // from it.
+    int overflowCount = 0;
+    for (const Place &place : places) {
+        if (place.overflow) ++overflowCount;
+    }
+    int blockBase = -1;
+    for (int i = 0; i < overflowCount; ++i) {
+        const int slot = reserve();
+        if (i == 0) blockBase = slot;
+    }
 
     std::vector<int> slots;
     int scratch = node.scratchBase();
@@ -405,30 +453,44 @@ void CodeGen::generateCall(Call &node) {
             referenceSlots[i] = scratch++;
             emitter_.storeSlot(slotKind(proto.inputs[i].type), referenceSlots[i]);
         } else {
-            emitter_.storeSlot(slotKind(proto.inputs[i].type), slots[i]);
+            emitter_.storeSlot(places[i].kind, slots[i]);
         }
     }
-    for (size_t i = 0; i < count; ++i) release();
 
-    // Descending, so that a target which shares a register with the
-    // accumulator is filled last.
-    if (proto.returnsByPointer()) {
-        for (size_t i = proto.outputs.size(); i-- > 0;) {
-            emitter_.loadSlotAddress(node.scratchBase() + static_cast<int>(i));
-            emitter_.setArg(Slot::Wide, registerIndex(proto, proto.inputs.size() + i));
-        }
-    }
-    for (size_t i = count; i-- > 0;) {
-        const int where = registerIndex(proto, i);
-        if (proto.inputs[i].byReference) {
+    // The overflow places are filled first, because filling them uses the
+    // accumulator and the registers must be left standing.
+    for (size_t i = 0; i < places.size(); ++i) {
+        if (!places[i].overflow) continue;
+        if (i < count && referenceSlots[i] >= 0) {
             emitter_.loadSlotAddress(referenceSlots[i]);
-            emitter_.setArg(Slot::Wide, where);
+        } else if (i < count) {
+            emitter_.loadSlot(places[i].kind, slots[i]);
         } else {
-            emitter_.loadSlotIntoArg(slotKind(proto.inputs[i].type), slots[i], where);
+            emitter_.loadSlotAddress(node.scratchBase() + static_cast<int>(i - count));
+        }
+        emitter_.storeSlot(places[i].kind, blockBase + places[i].index);
+    }
+
+    // Then the registers, descending, so that a target which shares one with
+    // the accumulator fills it last.
+    for (size_t i = places.size(); i-- > 0;) {
+        if (places[i].overflow) continue;
+        if (i >= count) {
+            emitter_.loadSlotAddress(node.scratchBase() + static_cast<int>(i - count));
+            emitter_.setArg(Slot::Wide, places[i].index);
+        } else if (referenceSlots[i] >= 0) {
+            emitter_.loadSlotAddress(referenceSlots[i]);
+            emitter_.setArg(Slot::Wide, places[i].index);
+        } else {
+            emitter_.loadSlotIntoArg(places[i].kind, slots[i], places[i].index);
         }
     }
+    if (overflowCount > 0) emitter_.setOverflowBlock(blockBase);
 
     emitter_.call(mangle(proto.name));
+
+    for (size_t i = 0; i < count; ++i) release();
+    for (int i = 0; i < overflowCount; ++i) release();
 
     // Copy-back, to the variable or the element the argument named.
     for (size_t i = 0; i < count; ++i) {
@@ -438,6 +500,7 @@ void CodeGen::generateCall(Call &node) {
         writeSymbol(*target.symbol());
     }
 }
+
 
 void CodeGen::generateBuiltin(Call &node) {
     const Builtin &fn = builtin(node.builtin());
@@ -458,6 +521,7 @@ void CodeGen::generateBuiltin(Call &node) {
         return;
     }
 
+    // Two arguments at most, so no built-in ever overflows the registers.
     const bool intAnswer = node.type() == Type::intType();
     const Slot kind = intAnswer ? Slot::Int : Slot::Real;
 

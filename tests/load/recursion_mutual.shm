@@ -1,0 +1,19 @@
+// Two functions calling each other a hundred deep, which the overall ceiling of
+// 1024 frames has to let through and the per-function one of 128 must not stop.
+fun <int> = even(n: int) {
+  if n = 0 {
+    return 1
+  }
+  return odd(n - 1)
+}
+
+fun <int> = odd(n: int) {
+  if n = 0 {
+    return 0
+  }
+  return even(n - 1)
+}
+
+fun <> = main() {
+  ? even(100) odd(100) even(101) odd(101)
+}

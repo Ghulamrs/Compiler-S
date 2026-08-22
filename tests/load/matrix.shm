@@ -1,0 +1,36 @@
+// A sixteen by sixteen matrix multiplied by another, by reference, and summed.
+// Every element costs sixteen multiplies and sixteen adds through the runtime,
+// so this is the closest thing here to a measurement.
+fun <> = mul(a[][]: real, b[][]: real, c[][]: real) {
+  real s : 0.0
+  for i < a.row {
+    for j < b.col {
+      s : 0.0
+      for k < a.col {
+        s : s + a[i][k] * b[k][j]
+      }
+      c[i][j] : s
+    }
+  }
+}
+
+fun <> = main() {
+  real a[16][16]
+  real b[16][16]
+  real c[16][16]
+  for i < a.row {
+    for j < a.col {
+      a[i][j] : real(i + j)
+      b[i][j] : real(i - j)
+    }
+  }
+  mul(a, b, c)
+  real t : 0.0
+  for i < c.row {
+    for j < c.col {
+      t : t + c[i][j]
+    }
+  }
+  ? t
+  ? c[0][0] c[15][15]
+}

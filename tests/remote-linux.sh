@@ -18,7 +18,7 @@ BOX="${SHM_LINUX_BOX:-ec2-user@52.202.164.123}"
 DIR=shalimar
 
 tar --no-mac-metadata -czf "${TMPDIR:-/tmp}/shm-src.tgz" \
-    src runtime tests/cases tests/run.sh Makefile 2>/dev/null
+    src runtime tests/cases tests/load tests/run.sh Makefile 2>/dev/null
 
 # A relayed tree is not a checked-out one. Everything the tarball carries is
 # removed first, and the build is done from clean - an object left behind from

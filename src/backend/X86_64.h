@@ -20,6 +20,7 @@ namespace shalimar {
 struct Abi {
     const Reg *intArgs;     // argument registers, in the order they fill
     int intArgCount;
+    int sseArgCount;
 
     // Whether argument n takes slot n in whichever file, so that spending one
     // file's slot spends the other's. Microsoft's convention is positional
@@ -50,6 +51,10 @@ public:
     void loadSlotIntoArg(Slot kind, int slot, int index) override;
 
     bool positionalArguments() const override { return abi_.positional; }
+    int intArgCapacity() const override { return abi_.intArgCount; }
+    int realArgCapacity() const override { return abi_.sseArgCount; }
+    void setOverflowBlock(int slot) override;
+    void spillOverflowArgument(Slot kind, int index, int slot) override;
     void spillArgument(Slot kind, int registerIndex, int slot) override;
     void call(const std::string &name) override;
     void widenAccumulator() override;
@@ -77,6 +82,10 @@ protected:
     // result of that kind lands.
     static const Reg accumulator = Reg::Ax;
     static const Reg realAccumulator = Reg::Xmm0;
+    // Caller-saved in both conventions and an argument register in neither,
+    // so an overflow block's address survives from the call site into the
+    // callee's prologue without standing in anything's way.
+    static const Reg overflowPointer = Reg::R10;
 
     // How a local label is spelled, which is the one piece of control flow
     // the two assemblers do not agree on.

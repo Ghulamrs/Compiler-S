@@ -101,10 +101,18 @@ private:
     // when the function declares no outputs.
     void generateCall(Call &node);
 
-    // Which register in its own file an argument at this position takes.
-    // Microsoft's convention is positional, so spending an integer slot
-    // spends the matching SSE one; System V's and Apple's are not.
-    int registerIndex(const Prototype &proto, size_t position) const;
+    // Where each of a call's arguments travels: a register of its own file,
+    // or a place in the overflow block when the registers have run out.
+    //
+    // The caller and the callee both work this out from the prototype and
+    // from the same target, which is what makes them agree without anything
+    // being written down between them.
+    struct Place {
+        Slot kind;
+        bool overflow;
+        int index;        // the register in its file, or the place in the block
+    };
+    std::vector<Place> planArguments(const Prototype &proto) const;
 
     // A name is read and written through its slot, unless it is a reference
     // parameter, in which case the slot holds the caller's address.

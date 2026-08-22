@@ -98,21 +98,39 @@ row is a value that can be replaced, so a row has to be a thing.
 
 ## Testing
 
-A case is `tests/cases/<name>.shm` beside `tests/cases/<name>.expected`. The
+There are two suites and they ask different questions. **`tests/cases`** asks
+whether a rule of the language is obeyed - each program is small and each one
+is about one rule. **`tests/load`** asks whether the rules are still obeyed
+when the program is large, and the answers were not the same: it found three
+defects on the day it was written, none of which a small program could reach.
+
+- an arm64 frame past 4095 bytes, because `sub sp, sp, #n` takes twelve bits;
+- a call with more arguments than the registers carry, which read past the
+  end of the register table - a five-argument function was handed `%xmm0`
+  for its fifth argument on Windows, silently;
+- every string comparison answering 0, because loading the zero to compare
+  against destroyed the comparison's own result on a target where the
+  accumulator is also the first argument register.
+
+`tests/generate.py` writes that suite and is deterministic, so the committed
+programs can be diffed after a change to it.
+
+A case is `<name>.shm` beside `<name>.expected` in either directory. The
 expected file holds the compiler's own output followed by the program's,
 which is the order the app produces them in - it reports what the checker
 found and then runs. It is recorded from the app's interpreter on a Mac and
 committed, so neither of the other machines needs Swift or the app.
 
 ```
-./tests/run.sh              the host suite
+./tests/generate.py         rewrite tests/load
+./tests/run.sh              the host suite: tests/cases and tests/load
 ./tests/remote-linux.sh     build with real g++ and run the suite on the box
 ./tests/remote-windows.sh   assemble with ml64 and run on the Windows box
 ./tests/record.sh           re-record expected output from the interpreter
 ./tests/shortest.sh         the compact spelling of a double, against Swift
 ```
 
-The standing result, all three green: **54 cases on the host and on Linux, 22
+The standing result, all three green: **74 cases on the host and on Linux, 42
 on Windows** - the other 32 are diagnostics, which the compiler produces on
 whichever machine it runs on and the Windows box therefore never sees.
 
@@ -148,9 +166,13 @@ answer if you were not.
    branch for the ones that can - is the obvious next thing, and it wants the
    assembly fingerprinted first so that "meant to change nothing" can be
    checked.
-3. **A call may take at most eight arguments of a kind**, because every
-   target here passes arguments in registers only. The compiler says so
-   rather than emitting something that will not work.
+3. **No limit on how many arguments a call may take** - arguments beyond the
+   registers travel in a block of frame slots whose address is handed over in
+   a scratch register. That is this compiler's own convention rather than the
+   platform's, which is allowed because both ends of such a call are code it
+   wrote; no runtime call ever overflows, because none takes more than three
+   arguments. It avoids the stack-argument rules, which is where the three
+   platforms differ most.
 4. **`shm_line` is a call per statement.** It is how a runtime error names
    its line. A store to a global would be cheaper and is three spellings.
 5. **No debug information.** `-g` is not accepted; a debugger sees the

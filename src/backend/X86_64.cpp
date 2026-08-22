@@ -11,12 +11,12 @@ const Reg microsoftIntArgs[] = {Reg::Cx, Reg::Dx, Reg::R8, Reg::R9};
 }  // namespace
 
 const Abi &systemVAbi() {
-    static const Abi abi = {systemVIntArgs, 6, false, 0};
+    static const Abi abi = {systemVIntArgs, 6, 8, false, 0};
     return abi;
 }
 
 const Abi &microsoftAbi() {
-    static const Abi abi = {microsoftIntArgs, 4, true, 32};
+    static const Abi abi = {microsoftIntArgs, 4, 4, true, 32};
     return abi;
 }
 
@@ -125,6 +125,25 @@ void X86_64Emitter::loadSlotIntoArg(Slot kind, int slot, int index) {
     instruction(spelling_.binary(moveFor(kind), kind == Slot::Real ? 0 : width,
                                  slotOperand(slot, width),
                                  spelling_.reg(argRegister(kind, index), width)));
+}
+
+void X86_64Emitter::setOverflowBlock(int slot) {
+    instruction(spelling_.loadAddress(slotOperand(slot, 8),
+                                      spelling_.reg(overflowPointer, 8)));
+}
+
+// Through r11 and xmm8, neither of which carries an argument in either
+// convention. At this point in a prologue every argument register is still
+// live, so borrowing one of them - or the accumulator - would destroy an
+// argument that has not been spilled yet.
+void X86_64Emitter::spillOverflowArgument(Slot kind, int index, int slot) {
+    const int width = widthFor(kind);
+    const Reg via = kind == Slot::Real ? Reg::Xmm8 : Reg::R11;
+    instruction(spelling_.binary(moveFor(kind), kind == Slot::Real ? 0 : width,
+                                 spelling_.offsetFrom(overflowPointer, 8 * index, width),
+                                 spelling_.reg(via, width)));
+    instruction(spelling_.binary(moveFor(kind), kind == Slot::Real ? 0 : width,
+                                 spelling_.reg(via, width), slotOperand(slot, width)));
 }
 
 void X86_64Emitter::spillArgument(Slot kind, int registerIndex, int slot) {
