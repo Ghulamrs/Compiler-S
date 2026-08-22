@@ -18,7 +18,7 @@ public:
 
     void beginModule(const std::string &sourceName) override;
     void endModule() override;
-    void beginFunction(const std::string &name) override;
+    void beginFunction(const std::string &name, int slots) override;
     void endFunction() override;
 
 private:

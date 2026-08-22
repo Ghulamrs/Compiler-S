@@ -88,6 +88,14 @@ until you know what it ran against - `make` with nothing to rebuild, or a
 relayed tree that never updated, will both report success.
 
 - `[ shc -nt src/Parser.cpp ]` before believing a remote run
+- **a stale object file is a heap corruptor, not a link error.** The Makefile
+  carries `-MMD -MP` for this reason. Without header dependencies an edited
+  header rebuilds only some translation units, the rest keep the previous
+  definition of a class, the link succeeds because the mangled names still
+  match, and the program corrupts its heap somewhere unrelated. A sanitiser
+  build cannot reproduce it - a sanitiser build is a clean build. The remote
+  suites therefore build from clean, because a relayed tree is not a
+  checked-out one.
 - grep the emitted assembly for a token the change introduces; it is the
   cheapest confirmation there is
 - when a suite fails on one host and passes on another, **suspect the host's

@@ -10,6 +10,15 @@
 
 CXX      ?= c++
 CXXFLAGS ?= -std=c++14 -Wall -Wextra -Werror -pedantic -O2
+
+# Header dependencies, and they are not optional. Without them an edit to a
+# header rebuilds only the translation units make happens to think are older,
+# and the ones it skips are left compiled against the previous definition of a
+# class. The link succeeds - the mangled names still match - and the result
+# corrupts the heap at run time, some way from anything that looks wrong. That
+# happened here once and cost an hour chasing a sanitiser that had nothing to
+# find, because a clean rebuild is exactly what a sanitiser build is.
+DEPFLAGS := -MMD -MP
 BUILD    ?= build
 
 HOST := $(shell uname -s)
@@ -27,6 +36,7 @@ SOURCES := \
   src/Type.cpp \
   src/Ast.cpp \
   src/Parser.cpp \
+  src/Check.cpp \
   src/CodeGen.cpp \
   src/Target.cpp \
   src/backend/Spelling.cpp \
@@ -36,6 +46,7 @@ SOURCES := \
   src/backend/X86_64Windows.cpp
 
 OBJECTS := $(patsubst %.cpp,$(BUILD)/%.o,$(SOURCES))
+DEPENDS := $(OBJECTS:.o=.d)
 RUNTIME := lib/shmrt-$(TARGET).o
 
 all: shc $(RUNTIME)
@@ -45,7 +56,9 @@ shc: $(OBJECTS)
 
 $(BUILD)/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -c -o $@ $<
+
+-include $(DEPENDS)
 
 $(RUNTIME): runtime/Runtime.cpp runtime/shmrt.h
 	@mkdir -p lib

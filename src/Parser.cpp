@@ -157,20 +157,130 @@ StmtPtr Parser::parsePrint() {
 bool Parser::startsTerm() const {
     switch (current().kind) {
     case Tok::IntLiteral:
+    case Tok::ParensOpen:
         return true;
+    case Tok::Operator:
+        // Unary minus, and nothing else in the operator class: a term cannot
+        // begin with '*'.
+        return current().text == "-";
     default:
         return false;
     }
 }
 
 ExprPtr Parser::parseExpression() {
-    return parsePrimary();
+    return parseOr();
+}
+
+ExprPtr Parser::parseOr() {
+    ExprPtr left = parseAnd();
+    while (!failed_ && atOperator("|")) {
+        advance();
+        ExprPtr right = parseAnd();
+        if (failed_) return nullptr;
+        left.reset(new Binary(Binary::Op::Or, std::move(left), std::move(right)));
+    }
+    return left;
+}
+
+ExprPtr Parser::parseAnd() {
+    ExprPtr left = parseComparison();
+    while (!failed_ && atOperator("&")) {
+        advance();
+        ExprPtr right = parseComparison();
+        if (failed_) return nullptr;
+        left.reset(new Binary(Binary::Op::And, std::move(left), std::move(right)));
+    }
+    return left;
+}
+
+ExprPtr Parser::parseComparison() {
+    ExprPtr left = parseAdditive();
+    while (!failed_) {
+        Binary::Op op;
+        if      (atOperator("="))  op = Binary::Op::Equal;
+        else if (atOperator("!=")) op = Binary::Op::NotEqual;
+        else if (atOperator("<"))  op = Binary::Op::Less;
+        else if (atOperator(">"))  op = Binary::Op::Greater;
+        else if (atOperator("<=")) op = Binary::Op::LessEqual;
+        else if (atOperator(">=")) op = Binary::Op::GreaterEqual;
+        else break;
+        advance();
+        ExprPtr right = parseAdditive();
+        if (failed_) return nullptr;
+        left.reset(new Binary(op, std::move(left), std::move(right)));
+    }
+    return left;
+}
+
+ExprPtr Parser::parseAdditive() {
+    ExprPtr left = parseMultiplicative();
+    while (!failed_ && (atOperator("+") || atOperator("-"))) {
+        const Binary::Op op = atOperator("+") ? Binary::Op::Add : Binary::Op::Subtract;
+        advance();
+        ExprPtr right = parseMultiplicative();
+        if (failed_) return nullptr;
+        left.reset(new Binary(op, std::move(left), std::move(right)));
+    }
+    return left;
+}
+
+ExprPtr Parser::parseMultiplicative() {
+    ExprPtr left = parsePower();
+    while (!failed_) {
+        Binary::Op op;
+        if      (atOperator("*")) op = Binary::Op::Multiply;
+        else if (atOperator("/")) op = Binary::Op::Divide;
+        else if (atOperator("%")) op = Binary::Op::Modulus;
+        else break;
+        advance();
+        ExprPtr right = parsePower();
+        if (failed_) return nullptr;
+        left.reset(new Binary(op, std::move(left), std::move(right)));
+    }
+    return left;
+}
+
+// '^' is right-associative: '2^3^2' is 2^(3^2), which is 512 and not 64.
+ExprPtr Parser::parsePower() {
+    ExprPtr base = parsePrimary();
+    if (failed_ || !atOperator("^")) return base;
+    advance();
+    ExprPtr exponent = parsePower();
+    if (failed_) return nullptr;
+    return ExprPtr(new Binary(Binary::Op::Power, std::move(base), std::move(exponent)));
 }
 
 ExprPtr Parser::parsePrimary() {
+    // Unary minus folds the negation into its operand here and returns it as
+    // one finished term, before the caller can see a following '^'. That is
+    // why '-2^2' is '(-2)^2' and evaluates to 4, unlike ordinary maths
+    // notation. On the exponent side the recursion in parsePower() puts it
+    // back the usual way round, so '2^-2' is 2^(-2).
+    if (atOperator("-")) {
+        advance();
+        ExprPtr operand = parsePrimary();
+        if (failed_) return nullptr;
+        // A negated literal becomes the literal, so '-5' is one constant
+        // rather than a subtraction from zero. Anything else is the
+        // subtraction, which is all the language needs a unary minus to be.
+        if (operand->isIntLiteral()) {
+            const int32_t value = static_cast<const IntLit &>(*operand).value();
+            return ExprPtr(new IntLit(-value));
+        }
+        return ExprPtr(new Binary(Binary::Op::Subtract,
+                                  ExprPtr(new IntLit(0)), std::move(operand)));
+    }
     if (at(Tok::IntLiteral)) {
         const Token &t = advance();
         return ExprPtr(new IntLit(t.intValue));
+    }
+    if (at(Tok::ParensOpen)) {
+        advance();
+        ExprPtr inner = parseExpression();
+        if (failed_) return nullptr;
+        if (!expect(Tok::ParensClose, unexpected())) return nullptr;
+        return inner;
     }
     failUnexpected();
     return nullptr;

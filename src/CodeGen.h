@@ -22,10 +22,11 @@ class CodeGen : public NodeVisitor {
 public:
     explicit CodeGen(Emitter &emitter) : emitter_(emitter) {}
 
-    void run(const Program &program, const std::string &sourceName);
+    void run(Program &program, const std::string &sourceName);
 
-    void visit(const IntLit &node) override;
-    void visit(const Print &node) override;
+    void visit(IntLit &node) override;
+    void visit(Binary &node) override;
+    void visit(Print &node) override;
 
     // What a Shalimar function is called once it is a linker symbol.
     // Shalimar's main() is not the program's entry point - the runtime's is -
@@ -36,9 +37,18 @@ public:
 private:
     Emitter &emitter_;
 
-    void generate(const Function &function);
-    void generate(const Stmt &statement);
-    void evaluate(const Expr &expr);
+    void generate(Function &function);
+    void generate(Stmt &statement);
+    void evaluate(Expr &expr);
+
+    // Where an operand waits while its sibling is evaluated. Slots are
+    // numbered from zero and nest with the expression; how many a function
+    // needs was measured by the checker, which walked the same nesting.
+    // That is slower than a register allocator and it is the same shape on
+    // every machine, which is what lets one generator drive three.
+    int depth_ = 0;
+    int reserve();
+    void release();
 };
 
 }  // namespace shalimar

@@ -20,7 +20,12 @@ DIR=shalimar
 tar --no-mac-metadata -czf "${TMPDIR:-/tmp}/shm-src.tgz" \
     src runtime tests/cases tests/run.sh Makefile 2>/dev/null
 
-ssh -n -i "$KEY" "$BOX" "rm -rf ~/$DIR/src ~/$DIR/tests && mkdir -p ~/$DIR"
+# A relayed tree is not a checked-out one. Everything the tarball carries is
+# removed first, and the build is done from clean - an object left behind from
+# a previous relay is compiled against the previous headers, and the link
+# succeeds because the mangled names still match. That is not hypothetical: it
+# corrupted the heap here once, some way from anything that looked wrong.
+ssh -n -i "$KEY" "$BOX" "rm -rf ~/$DIR/src ~/$DIR/tests ~/$DIR/build ~/$DIR/lib ~/$DIR/shc && mkdir -p ~/$DIR"
 scp -q -i "$KEY" "${TMPDIR:-/tmp}/shm-src.tgz" "$BOX:~/$DIR/"
 ssh -n -i "$KEY" "$BOX" "cd ~/$DIR && tar xzf shm-src.tgz 2>/dev/null && find . -name '._*' -delete && \
     chmod +x tests/run.sh && make 2>&1 | grep -E 'error|Error' ; \

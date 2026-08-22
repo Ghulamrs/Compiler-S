@@ -71,6 +71,10 @@ std::string GnuSpelling::call(const std::string &target) const {
 
 std::string GnuSpelling::ret() const { return "ret"; }
 
+std::string GnuSpelling::frameSlot(int offset, int) const {
+    return std::to_string(offset) + "(%rbp)";
+}
+
 // -------------------------------------------------------------------- MASM
 
 std::string MasmSpelling::reg(Reg r, int width) const {
@@ -100,5 +104,11 @@ std::string MasmSpelling::call(const std::string &target) const {
 }
 
 std::string MasmSpelling::ret() const { return "ret"; }
+
+std::string MasmSpelling::frameSlot(int offset, int width) const {
+    const char *size = width == 8 ? "QWORD" : (width == 1 ? "BYTE" : "DWORD");
+    const std::string sign = offset < 0 ? "-" : "+";
+    return std::string(size) + " PTR [rbp" + sign + std::to_string(offset < 0 ? -offset : offset) + "]";
+}
 
 }  // namespace shalimar

@@ -15,7 +15,8 @@ void X86_64LinuxEmitter::endModule() {
     raw("\t.section\t.note.GNU-stack,\"\",@progbits");
 }
 
-void X86_64LinuxEmitter::beginFunction(const std::string &name) {
+void X86_64LinuxEmitter::beginFunction(const std::string &name, int slots) {
+    setSlots(slots);
     const std::string s = symbol(name);
     blank();
     raw("\t.globl\t" + s);

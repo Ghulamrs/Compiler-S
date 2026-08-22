@@ -34,18 +34,35 @@ public:
     virtual void beginModule(const std::string &sourceName) = 0;
     virtual void endModule() = 0;
 
-    virtual void beginFunction(const std::string &name) = 0;
+    // `slots` is how many eight-byte places the frame must hold. The checker
+    // worked it out while it typed the function.
+    virtual void beginFunction(const std::string &name, int slots) = 0;
     virtual void endFunction() = 0;
 
     // Integer accumulator.
     virtual void loadInt(int32_t value) = 0;
 
+    // Park the accumulator in a numbered frame slot, and read one back into
+    // an argument register. Between them these are the whole of how an
+    // operand survives the evaluation of its sibling.
+    virtual void spillInt(int slot) = 0;
+    virtual void loadSlotIntoIntArg(int slot, int index) = 0;
+
     // Move the integer accumulator into the register argument `index` takes,
-    // then call. Arguments are set in ascending index order, which is what
-    // lets a target that passes the first argument in the accumulator's own
-    // register get away with a move to itself.
+    // then call. Arguments are set in descending index order, so that a
+    // target which passes the first argument in the accumulator's own
+    // register does not overwrite the accumulator before reading it.
     virtual void setIntArg(int index) = 0;
     virtual void callRuntime(const std::string &name) = 0;
+
+    // Tell the runtime which statement is executing, so that a failure names
+    // it. Written as a call rather than a store to a global because a global
+    // has to be addressed, and addressing one is three different spellings.
+    void setLine(int line) {
+        loadInt(line);
+        setIntArg(0);
+        callRuntime("shm_line");
+    }
 
 protected:
     // Append one line of assembly, indented as an instruction.

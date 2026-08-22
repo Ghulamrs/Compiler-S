@@ -72,7 +72,15 @@ private:
     Block parseBlock();
     StmtPtr parseStatement();
     StmtPtr parsePrint();
+    // One method per precedence tier, loosest first. '^' is the only
+    // right-associative one and recurses into itself for that reason.
     ExprPtr parseExpression();
+    ExprPtr parseOr();
+    ExprPtr parseAnd();
+    ExprPtr parseComparison();
+    ExprPtr parseAdditive();
+    ExprPtr parseMultiplicative();
+    ExprPtr parsePower();
     ExprPtr parsePrimary();
 };
 

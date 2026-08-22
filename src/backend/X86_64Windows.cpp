@@ -9,7 +9,8 @@ void X86_64WindowsEmitter::beginModule(const std::string &sourceName) {
     // put in front in endModule().
 }
 
-void X86_64WindowsEmitter::beginFunction(const std::string &name) {
+void X86_64WindowsEmitter::beginFunction(const std::string &name, int slots) {
+    setSlots(slots);
     const std::string s = symbol(name);
     openProcedure_ = s;
     blank();

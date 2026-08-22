@@ -36,6 +36,8 @@ public:
         : spelling_(spelling), abi_(abi) {}
 
     void loadInt(int32_t value) override;
+    void spillInt(int slot) override;
+    void loadSlotIntoIntArg(int slot, int index) override;
     void setIntArg(int index) override;
     void callRuntime(const std::string &name) override;
 
@@ -46,11 +48,16 @@ protected:
     // rax is the integer accumulator, and also where a call's result lands.
     static const Reg accumulator = Reg::Ax;
 
-    // Bytes the frame reserves below rbp. The shadow area lives at the bottom
-    // of it, where a callee expects it, and the whole is rounded so that rsp
-    // is sixteen-byte aligned at every call - which is what the ABI promises
-    // and what an SSE spill in a callee depends on.
-    int frameBytes() const;
+    // Bytes the frame reserves below rbp: the slots first, then the shadow
+    // area at the bottom where a callee expects to find it. The whole is
+    // rounded so that rsp is sixteen-byte aligned at every call - which is
+    // what the ABI promises and what an SSE spill in a callee depends on.
+    void setSlots(int slots);
+    int frameBytes() const { return frameBytes_; }
+
+    // Slot n, as an operand. Written by the Spelling, because a memory
+    // reference is one of the things the two syntaxes disagree about.
+    std::string slotOperand(int slot, int width) const;
 
     void emitPrologue();
     void emitEpilogue();
@@ -62,6 +69,7 @@ protected:
 
 private:
     std::vector<std::string> externals_;
+    int frameBytes_ = 0;
 };
 
 }  // namespace shalimar

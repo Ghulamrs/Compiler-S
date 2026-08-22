@@ -20,12 +20,16 @@ const Abi &microsoftAbi() {
     return abi;
 }
 
-int X86_64Emitter::frameBytes() const {
-    // Nothing but the shadow area yet. On entry rsp is eight past a multiple
-    // of sixteen, pushing rbp squares it, so the reservation itself has to be
-    // a multiple of sixteen to leave it that way.
-    int bytes = abi_.shadowBytes;
-    return (bytes + 15) & ~15;
+void X86_64Emitter::setSlots(int slots) {
+    // On entry rsp is eight past a multiple of sixteen; pushing rbp squares
+    // it, so the reservation itself has to be a multiple of sixteen to leave
+    // it that way for the next call.
+    frameBytes_ = (slots * 8 + abi_.shadowBytes + 15) & ~15;
+}
+
+// Slot n sits below rbp, above the shadow area at the bottom of the frame.
+std::string X86_64Emitter::slotOperand(int slot, int width) const {
+    return spelling_.frameSlot(-8 * (slot + 1), width);
 }
 
 void X86_64Emitter::emitPrologue() {
@@ -48,6 +52,15 @@ void X86_64Emitter::emitEpilogue() {
 
 void X86_64Emitter::loadInt(int32_t value) {
     instruction(spelling_.binary("mov", 4, spelling_.imm(value), spelling_.reg(accumulator, 4)));
+}
+
+void X86_64Emitter::spillInt(int slot) {
+    instruction(spelling_.binary("mov", 4, spelling_.reg(accumulator, 4), slotOperand(slot, 4)));
+}
+
+void X86_64Emitter::loadSlotIntoIntArg(int slot, int index) {
+    instruction(spelling_.binary("mov", 4, slotOperand(slot, 4),
+                                 spelling_.reg(abi_.intArgs[index], 4)));
 }
 
 void X86_64Emitter::setIntArg(int index) {

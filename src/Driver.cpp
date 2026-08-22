@@ -1,5 +1,6 @@
 #include "Driver.h"
 
+#include "Check.h"
 #include "CodeGen.h"
 #include "Diag.h"
 #include "Parser.h"
@@ -137,6 +138,20 @@ int Driver::run(const std::vector<std::string> &arguments) {
         std::cout << text;
         return 1;
     }
+
+    // Check. Unlike the two stages above it does not stop at the first
+    // problem: it types the whole program, reports everything it finds, and
+    // only then says whether the program may run. That is why several
+    // messages can appear at once, and why warnings appear for programs that
+    // run anyway.
+    Checker checker(diagnostics);
+    const bool sound = checker.check(*program);
+    {
+        std::string text;
+        diagnostics.writeTo(text);
+        std::cout << text;
+    }
+    if (!sound) return 1;
 
     std::unique_ptr<Emitter> emitter = target->newEmitter();
     CodeGen generator(*emitter);

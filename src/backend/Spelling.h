@@ -37,6 +37,11 @@ public:
     virtual std::string call(const std::string &target) const = 0;
     virtual std::string ret() const = 0;
 
+    // A frame slot: an offset from the base pointer. MASM wants the width
+    // written on the reference because the register operand may not carry
+    // it; GNU puts the width on the mnemonic instead and needs none here.
+    virtual std::string frameSlot(int offset, int width) const = 0;
+
 protected:
     // The register file, indexed by Reg, at each of the three widths.
     static const char *name(Reg r, int width);
@@ -52,6 +57,7 @@ public:
                       const std::string &operand) const override;
     std::string call(const std::string &target) const override;
     std::string ret() const override;
+    std::string frameSlot(int offset, int width) const override;
 
 private:
     // 'l' on a four-byte mov, 'q' on an eight-byte one. An SSE mnemonic
@@ -69,6 +75,7 @@ public:
                       const std::string &operand) const override;
     std::string call(const std::string &target) const override;
     std::string ret() const override;
+    std::string frameSlot(int offset, int width) const override;
 };
 
 }  // namespace shalimar
