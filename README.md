@@ -175,5 +175,11 @@ answer if you were not.
    platforms differ most.
 4. **`shm_line` is a call per statement.** It is how a runtime error names
    its line. A store to a global would be cheaper and is three spellings.
-5. **No debug information.** `-g` is not accepted; a debugger sees the
-   runtime's frames and nothing of the program's.
+5. **No debug information, and this is settled rather than pending.** There
+   is no `-g`, no DWARF and no CodeView, and none is planned: the language is
+   asked for by people writing numeric programs on a phone, and a symbolic
+   debugger is not something they reach for. What replaces it is already
+   here - a runtime error names its line and its function, and `-S` shows
+   what was emitted - and those are what to extend if a program is ever hard
+   to see into. **Do not add a line table on the grounds that the entry
+   below used to read like a gap.**

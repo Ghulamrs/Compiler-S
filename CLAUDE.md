@@ -73,6 +73,13 @@ diagnostics. It is C++14 with C linkage, compiled once per platform, and it
 also owns `main()`: the compiler emits Shalimar's `main` as `shm_user_main`
 so the C entry point stays the runtime's.
 
+## Decisions that are settled
+
+**No debugger support.** No `-g`, no DWARF, no CodeView, and none planned -
+asked and answered on 2026-08-22. What stands in for it is `shm_line`, which
+lets a runtime error name its line and its function, and `-S`. Extend those
+if a program is hard to see into; do not start a line table.
+
 ## How this is built
 
 **One language feature at a time, green on all three targets before the
