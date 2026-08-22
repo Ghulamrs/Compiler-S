@@ -21,6 +21,12 @@ struct Abi {
     const Reg *intArgs;     // argument registers, in the order they fill
     int intArgCount;
 
+    // Whether argument n takes slot n in whichever file, so that spending
+    // one file's slot spends the other's. Microsoft's convention is
+    // positional and System V's is not. No call the compiler emits mixes the
+    // two kinds yet; when one does, this is the flag that decides it.
+    bool positional;
+
     // The caller leaves this much room below the return address for the
     // callee to spill its register arguments into. Microsoft's ABI wants 32
     // bytes of it whether the callee uses them or not; System V wants none.
@@ -35,18 +41,37 @@ public:
     X86_64Emitter(const Spelling &spelling, const Abi &abi)
         : spelling_(spelling), abi_(abi) {}
 
-    void loadInt(int32_t value) override;
-    void spillInt(int slot) override;
-    void loadSlotIntoIntArg(int slot, int index) override;
+    void loadIntConstant(int32_t value) override;
+    void loadRealConstant(double value) override;
+
+    void storeIntSlot(int slot) override;
+    void loadIntSlot(int slot) override;
+    void storeRealSlot(int slot) override;
+    void loadRealSlot(int slot) override;
+
     void setIntArg(int index) override;
+    void setRealArg(int index) override;
+    void loadIntSlotIntoArg(int slot, int index) override;
+    void loadRealSlotIntoArg(int slot, int index) override;
+
     void callRuntime(const std::string &name) override;
 
 protected:
     const Spelling &spelling_;
     const Abi &abi_;
 
-    // rax is the integer accumulator, and also where a call's result lands.
+    // rax is the integer accumulator and xmm0 the real one, which are also
+    // where a call's result of each kind lands.
     static const Reg accumulator = Reg::Ax;
+    static const Reg realAccumulator = Reg::Xmm0;
+    // A scratch integer register for building a real constant. Caller-saved
+    // in both conventions and never holding anything of ours.
+    static const Reg scratch = Reg::Ax;
+
+    // The SSE argument registers. Both conventions start at xmm0 and run
+    // upward; they differ over whether an int argument spends an SSE slot,
+    // which no call here does yet.
+    static Reg sseArg(int index);
 
     // Bytes the frame reserves below rbp: the slots first, then the shadow
     // area at the bottom where a callee expects to find it. The whole is

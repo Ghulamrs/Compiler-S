@@ -1,9 +1,9 @@
 // The code generator.
 //
 // One walk of the tree, speaking only to an Emitter. Everything that is the
-// same on every machine is here - the order items are evaluated in, what a
-// print statement costs, which runtime entry point a value of a given type
-// goes to. Everything that is not is a method on Emitter.
+// same on every machine is here - the order operands are evaluated in, which
+// runtime entry point a type reaches, where a value waits while its sibling
+// is computed. Everything that is not is a virtual method on Emitter.
 //
 // A pass rather than a family of passes: there is one of these and three
 // Emitters, which is the opposite of giving each target its own walk and is
@@ -25,7 +25,12 @@ public:
     void run(Program &program, const std::string &sourceName);
 
     void visit(IntLit &node) override;
+    void visit(RealLit &node) override;
+    void visit(Var &node) override;
+    void visit(Convert &node) override;
     void visit(Binary &node) override;
+    void visit(Declare &node) override;
+    void visit(Assign &node) override;
     void visit(Print &node) override;
 
     // What a Shalimar function is called once it is a linker symbol.
@@ -37,18 +42,25 @@ public:
 private:
     Emitter &emitter_;
 
+    // Evaluation slots sit above the named variables in the frame, so the
+    // base moves with the function.
+    int evaluationBase_ = 0;
+    int depth_ = 0;
+    int reserve();
+    void release();
+
     void generate(Function &function);
     void generate(Stmt &statement);
     void evaluate(Expr &expr);
 
-    // Where an operand waits while its sibling is evaluated. Slots are
-    // numbered from zero and nest with the expression; how many a function
-    // needs was measured by the checker, which walked the same nesting.
-    // That is slower than a register allocator and it is the same shape on
-    // every machine, which is what lets one generator drive three.
-    int depth_ = 0;
-    int reserve();
-    void release();
+    // The accumulator a value of this type occupies, and the slot traffic
+    // that goes with it. Asking the type rather than branching at each use is
+    // what keeps the int and real paths from drifting apart.
+    static bool isReal(const Type *type);
+    void store(const Type *type, int slot);
+    void load(const Type *type, int slot);
+    void passAccumulator(const Type *type, int index);
+    void passSlot(const Type *type, int slot, int index);
 };
 
 }  // namespace shalimar

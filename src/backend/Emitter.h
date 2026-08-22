@@ -4,14 +4,15 @@
 // so a target is a class deriving from it rather than a second walk of the
 // program. Everything a target may differ over is a method here; anything
 // that is the same for all three - the order values are evaluated in, where a
-// jump goes, what a print item costs - stays in the generator and is written
-// once.
+// jump goes, which runtime entry point a type reaches - stays in the
+// generator and is written once.
 //
-// The machine model is deliberately small. Expressions evaluate into one
-// integer accumulator and one real accumulator, and an operand that has to
-// outlive the evaluation of its sibling is parked in a numbered slot in the
-// current frame. That is slower than a register allocator and it is the same
-// shape on all three machines, which is what lets one generator drive them.
+// The machine model is deliberately small. There are two accumulators, one
+// integer and one real, and an operand that has to outlive the evaluation of
+// its sibling is parked in a numbered slot in the current frame. A slot is
+// eight bytes and holds either kind. That is slower than a register allocator
+// and it is the same shape on all three machines, which is what lets one
+// generator drive them.
 #pragma once
 
 #include <cstdint>
@@ -39,27 +40,38 @@ public:
     virtual void beginFunction(const std::string &name, int slots) = 0;
     virtual void endFunction() = 0;
 
-    // Integer accumulator.
-    virtual void loadInt(int32_t value) = 0;
+    // Load a constant into the accumulator of its kind.
+    virtual void loadIntConstant(int32_t value) = 0;
+    virtual void loadRealConstant(double value) = 0;
 
-    // Park the accumulator in a numbered frame slot, and read one back into
-    // an argument register. Between them these are the whole of how an
-    // operand survives the evaluation of its sibling.
-    virtual void spillInt(int slot) = 0;
-    virtual void loadSlotIntoIntArg(int slot, int index) = 0;
+    // The frame slots: park an accumulator, read one back. Between them these
+    // are the whole of how an operand survives the evaluation of its sibling,
+    // and also how a named variable is read and written.
+    virtual void storeIntSlot(int slot) = 0;
+    virtual void loadIntSlot(int slot) = 0;
+    virtual void storeRealSlot(int slot) = 0;
+    virtual void loadRealSlot(int slot) = 0;
 
-    // Move the integer accumulator into the register argument `index` takes,
-    // then call. Arguments are set in descending index order, so that a
-    // target which passes the first argument in the accumulator's own
-    // register does not overwrite the accumulator before reading it.
+    // Argument setup. `index` counts within its own kind: the first real
+    // argument is real index 0 whether or not an int precedes it. That is
+    // System V's rule and Apple's; Microsoft's is positional, and the day a
+    // call mixes the two kinds this interface has to grow an Abi question.
+    // Nothing calls mixed yet, and this comment is here so that the day it
+    // does, the reason is not rediscovered.
     virtual void setIntArg(int index) = 0;
+    virtual void setRealArg(int index) = 0;
+    virtual void loadIntSlotIntoArg(int slot, int index) = 0;
+    virtual void loadRealSlotIntoArg(int slot, int index) = 0;
+
+    // The result lands in the accumulator of whichever kind the callee
+    // returns; the generator knows which and the target does not have to.
     virtual void callRuntime(const std::string &name) = 0;
 
     // Tell the runtime which statement is executing, so that a failure names
     // it. Written as a call rather than a store to a global because a global
     // has to be addressed, and addressing one is three different spellings.
     void setLine(int line) {
-        loadInt(line);
+        loadIntConstant(line);
         setIntArg(0);
         callRuntime("shm_line");
     }
@@ -75,6 +87,12 @@ protected:
     // every symbol it does not define. Recorded here so a target that needs
     // the list has it and one that does not can ignore it.
     virtual void noteExternal(const std::string &) {}
+
+    // The bits of a double, which is how a real constant is materialised:
+    // built in an integer register and moved across. That costs one extra
+    // instruction and saves a constant pool, a section and a relocation on
+    // every target at once.
+    static uint64_t bitsOf(double value);
 
     std::string text_;
 };

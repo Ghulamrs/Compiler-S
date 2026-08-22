@@ -11,13 +11,19 @@ const Reg microsoftIntArgs[] = {Reg::Cx, Reg::Dx, Reg::R8, Reg::R9};
 }  // namespace
 
 const Abi &systemVAbi() {
-    static const Abi abi = {systemVIntArgs, 6, 0};
+    static const Abi abi = {systemVIntArgs, 6, false, 0};
     return abi;
 }
 
 const Abi &microsoftAbi() {
-    static const Abi abi = {microsoftIntArgs, 4, 32};
+    static const Abi abi = {microsoftIntArgs, 4, true, 32};
     return abi;
+}
+
+Reg X86_64Emitter::sseArg(int index) {
+    static const Reg sse[] = {Reg::Xmm0, Reg::Xmm1, Reg::Xmm2, Reg::Xmm3,
+                              Reg::Xmm4, Reg::Xmm5, Reg::Xmm6, Reg::Xmm7};
+    return sse[index];
 }
 
 void X86_64Emitter::setSlots(int slots) {
@@ -50,22 +56,60 @@ void X86_64Emitter::emitEpilogue() {
     instruction(spelling_.ret());
 }
 
-void X86_64Emitter::loadInt(int32_t value) {
+void X86_64Emitter::loadIntConstant(int32_t value) {
     instruction(spelling_.binary("mov", 4, spelling_.imm(value), spelling_.reg(accumulator, 4)));
 }
 
-void X86_64Emitter::spillInt(int slot) {
+// Built in an integer register and moved across, which costs one extra
+// instruction and saves a constant pool, a section and a relocation.
+void X86_64Emitter::loadRealConstant(double value) {
+    instruction(spelling_.binary("mov", 8, spelling_.wideImm(bitsOf(value)),
+                                 spelling_.reg(scratch, 8)));
+    // No width suffix: 'movq' between a general register and an SSE one is
+    // its own mnemonic, and GNU would otherwise make it 'movqq'.
+    instruction(spelling_.binary("movq", 0, spelling_.reg(scratch, 8),
+                                 spelling_.reg(realAccumulator, 8)));
+}
+
+void X86_64Emitter::storeIntSlot(int slot) {
     instruction(spelling_.binary("mov", 4, spelling_.reg(accumulator, 4), slotOperand(slot, 4)));
 }
 
-void X86_64Emitter::loadSlotIntoIntArg(int slot, int index) {
+void X86_64Emitter::loadIntSlot(int slot) {
+    instruction(spelling_.binary("mov", 4, slotOperand(slot, 4), spelling_.reg(accumulator, 4)));
+}
+
+void X86_64Emitter::storeRealSlot(int slot) {
+    instruction(spelling_.binary("movsd", 0, spelling_.reg(realAccumulator, 8),
+                                 slotOperand(slot, 8)));
+}
+
+void X86_64Emitter::loadRealSlot(int slot) {
+    instruction(spelling_.binary("movsd", 0, slotOperand(slot, 8),
+                                 spelling_.reg(realAccumulator, 8)));
+}
+
+void X86_64Emitter::loadIntSlotIntoArg(int slot, int index) {
     instruction(spelling_.binary("mov", 4, slotOperand(slot, 4),
                                  spelling_.reg(abi_.intArgs[index], 4)));
 }
 
+void X86_64Emitter::loadRealSlotIntoArg(int slot, int index) {
+    instruction(spelling_.binary("movsd", 0, slotOperand(slot, 8),
+                                 spelling_.reg(sseArg(index), 8)));
+}
+
 void X86_64Emitter::setIntArg(int index) {
     const Reg target = abi_.intArgs[index];
+    if (target == accumulator) return;
     instruction(spelling_.binary("mov", 4, spelling_.reg(accumulator, 4), spelling_.reg(target, 4)));
+}
+
+void X86_64Emitter::setRealArg(int index) {
+    const Reg target = sseArg(index);
+    if (target == realAccumulator) return;
+    instruction(spelling_.binary("movapd", 0, spelling_.reg(realAccumulator, 8),
+                                 spelling_.reg(target, 8)));
 }
 
 void X86_64Emitter::callRuntime(const std::string &name) {

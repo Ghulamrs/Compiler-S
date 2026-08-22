@@ -57,9 +57,36 @@ int32_t shm_int_ge(int32_t a, int32_t b);
 int32_t shm_int_and(int32_t a, int32_t b);
 int32_t shm_int_or(int32_t a, int32_t b);
 
+// Real arithmetic. None of these can fail - division by zero is an infinity
+// here, not an error, and that is IEEE's answer rather than a decision taken
+// in this language - but they live beside the int ones so that one shape of
+// call serves both and the code generator has one thing to say.
+double shm_real_add(double a, double b);
+double shm_real_sub(double a, double b);
+double shm_real_mul(double a, double b);
+double shm_real_div(double a, double b);
+double shm_real_mod(double a, double b);
+double shm_real_pow(double a, double b);
+
+int32_t shm_real_eq(double a, double b);
+int32_t shm_real_ne(double a, double b);
+int32_t shm_real_lt(double a, double b);
+int32_t shm_real_gt(double a, double b);
+int32_t shm_real_le(double a, double b);
+int32_t shm_real_ge(double a, double b);
+int32_t shm_real_and(double a, double b);
+int32_t shm_real_or(double a, double b);
+
+// Conversions. int to real always succeeds; real to int truncates toward
+// zero and is refused outside the range, which is the one narrowing the
+// language performs silently and can still fail at run time.
+double  shm_int_to_real(int32_t value);
+int32_t shm_real_to_int(double value);
+
 // One print item: the value followed by a single space. '?' then ends the
 // line, '??' leaves it open.
 void shm_print_int(int32_t value);
+void shm_print_real(double value);
 void shm_line_end(void);
 
 #ifdef __cplusplus

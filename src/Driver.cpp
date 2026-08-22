@@ -132,6 +132,13 @@ int Driver::run(const std::vector<std::string> &arguments) {
     Diagnostics diagnostics;
     Parser parser(lexed.tokens, diagnostics);
     std::unique_ptr<Program> program = parser.parse();
+    if (diagnostics.hasUnsupported()) {
+        for (const Message &m : diagnostics.unsupportedItems()) {
+            std::cerr << "shc: not compiled yet: " << m.text
+                      << " (line " << m.line << ")\n";
+        }
+        return 3;
+    }
     if (!program) {
         std::string text;
         diagnostics.writeTo(text);
@@ -150,6 +157,16 @@ int Driver::run(const std::vector<std::string> &arguments) {
         std::string text;
         diagnostics.writeTo(text);
         std::cout << text;
+    }
+    // A construct the compiler has not reached yet is not a diagnostic about
+    // the program. It says so in its own words, on standard error, with a
+    // status of its own.
+    if (diagnostics.hasUnsupported()) {
+        for (const Message &m : diagnostics.unsupportedItems()) {
+            std::cerr << "shc: not compiled yet: " << m.text
+                      << " (line " << m.line << ")\n";
+        }
+        return 3;
     }
     if (!sound) return 1;
 

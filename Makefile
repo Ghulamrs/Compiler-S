@@ -39,6 +39,7 @@ SOURCES := \
   src/Check.cpp \
   src/CodeGen.cpp \
   src/Target.cpp \
+  src/backend/Emitter.cpp \
   src/backend/Spelling.cpp \
   src/backend/Arm64Darwin.cpp \
   src/backend/X86_64.cpp \

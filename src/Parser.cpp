@@ -125,8 +125,74 @@ Block Parser::parseBlock() {
 
 StmtPtr Parser::parseStatement() {
     if (at(Tok::PrintLine) || at(Tok::PrintInline)) return parsePrint();
+    if (atDeclaration()) return parseDeclaration();
+
+    // An identifier followed by one of the four assignment spellings can only
+    // begin a statement. That is the whole of how a statement boundary is
+    // found here: there is no terminator, and the parser decides by what it
+    // is looking at.
+    if (at(Tok::Identifier)) {
+        const Tok next = peek(1).kind;
+        if (next == Tok::Assign || next == Tok::PlusAssign || next == Tok::MinusAssign ||
+            (next == Tok::Operator && peek(1).text == "=")) {
+            return parseAssignment();
+        }
+    }
     failUnexpected();
     return nullptr;
+}
+
+// 'int' opens a term when it is 'int(x)' and does not when it is 'int k : 5'.
+// One token of lookahead separates them.
+bool Parser::atDeclaration() const {
+    if (!at(Tok::Int) && !at(Tok::Real) && !at(Tok::Char)) return false;
+    return peek(1).kind != Tok::ParensOpen;
+}
+
+const Type *Parser::scalarTypeHere() {
+    if (match(Tok::Int))  return Type::intType();
+    if (match(Tok::Real)) return Type::realType();
+    if (match(Tok::Char)) return Type::charType();
+    return nullptr;
+}
+
+StmtPtr Parser::parseDeclaration() {
+    const int line = current().line;
+    const Type *type = scalarTypeHere();
+
+    if (!at(Tok::Identifier)) { failUnexpected(); return nullptr; }
+    const std::string name = advance().text;
+
+    if (at(Tok::BracketOpen)) {
+        diag_.unsupported(line, "an array declaration");
+        failed_ = true;
+        return nullptr;
+    }
+
+    ExprPtr initial;
+    if (match(Tok::Assign)) {
+        initial = parseExpression();
+        if (failed_) return nullptr;
+    }
+    return StmtPtr(new Declare(type, name, std::move(initial), line));
+}
+
+// 'x : e', and the three spellings that mean the same thing. '=' is accepted
+// silently in this position; '+:' and '-:' are expanded here into 'x : x + e'
+// and 'x : x - e', so that nothing downstream has to know they existed.
+StmtPtr Parser::parseAssignment() {
+    const int line = current().line;
+    const std::string name = advance().text;
+    const Tok how = advance().kind;
+
+    ExprPtr value = parseExpression();
+    if (failed_) return nullptr;
+
+    if (how == Tok::PlusAssign || how == Tok::MinusAssign) {
+        const Binary::Op op = how == Tok::PlusAssign ? Binary::Op::Add : Binary::Op::Subtract;
+        value.reset(new Binary(op, ExprPtr(new Var(name)), std::move(value)));
+    }
+    return StmtPtr(new Assign(ExprPtr(new Var(name)), std::move(value), line));
 }
 
 // A print command must be the first token on its line. The rule's real
@@ -142,7 +208,7 @@ StmtPtr Parser::parsePrint() {
     advance();
 
     std::unique_ptr<Print> node(new Print(newline, line));
-    while (startsTerm()) {
+    while (startsTerm() && !startsLine(index_) && !looksLikeNewStatement(index_)) {
         ExprPtr item = parseExpression();
         if (failed_) return nullptr;
         node->add(std::move(item));
@@ -157,12 +223,30 @@ StmtPtr Parser::parsePrint() {
 bool Parser::startsTerm() const {
     switch (current().kind) {
     case Tok::IntLiteral:
+    case Tok::RealLiteral:
+    case Tok::Identifier:
     case Tok::ParensOpen:
         return true;
     case Tok::Operator:
         // Unary minus, and nothing else in the operator class: a term cannot
         // begin with '*'.
         return current().text == "-";
+    default:
+        return false;
+    }
+}
+
+bool Parser::looksLikeNewStatement(size_t at) const {
+    if (at + 1 >= tokens_.size()) return false;
+    if (tokens_[at].kind != Tok::Identifier) return false;
+    const Token &next = tokens_[at + 1];
+    switch (next.kind) {
+    case Tok::Assign:
+    case Tok::PlusAssign:
+    case Tok::MinusAssign:
+        return true;
+    case Tok::Operator:
+        return next.text == "=";
     default:
         return false;
     }
@@ -268,12 +352,24 @@ ExprPtr Parser::parsePrimary() {
             const int32_t value = static_cast<const IntLit &>(*operand).value();
             return ExprPtr(new IntLit(-value));
         }
+        if (operand->isRealLiteral()) {
+            const double value = static_cast<const RealLit &>(*operand).value();
+            return ExprPtr(new RealLit(-value));
+        }
         return ExprPtr(new Binary(Binary::Op::Subtract,
                                   ExprPtr(new IntLit(0)), std::move(operand)));
     }
     if (at(Tok::IntLiteral)) {
         const Token &t = advance();
         return ExprPtr(new IntLit(t.intValue));
+    }
+    if (at(Tok::RealLiteral)) {
+        const Token &t = advance();
+        return ExprPtr(new RealLit(t.realValue));
+    }
+    if (at(Tok::Identifier)) {
+        const Token &t = advance();
+        return ExprPtr(new Var(t.text));
     }
     if (at(Tok::ParensOpen)) {
         advance();

@@ -8,8 +8,11 @@
 // single instance rather than to loose file statics.
 #include "shmrt.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <string>
 
 namespace {
 
@@ -62,10 +65,115 @@ int32_t narrow(int64_t wide, const char *op) {
     return static_cast<int32_t>(wide);
 }
 
+// How a real is written when fixed notation will not do.
+//
+// Past 1e15 a double has no significant digits left to land after the point,
+// so fixed notation would print hundreds of fabricated ones - 1e300 comes out
+// as 309 characters. Those values, and the non-finite ones, keep the compact
+// spelling instead, and the compact spelling has to be the same one the app
+// prints or the two implementations disagree about what a number looks like.
+//
+// That spelling is the shortest decimal that reads back as the same double:
+// the digits are found by asking for more of them until the answer round
+// trips, which is what the app's Swift gets from its own conversion. Then
+// they are laid out positionally while the exponent still allows it, and in
+// exponent form after that - 1e15 prints as 1000000000000000.0 and 1e16 as
+// 1e+16.
+class Shortest {
+public:
+    // Writes into `out`, which must hold at least 40 characters.
+    static void write(char *out, size_t size, double v) {
+        if (std::isnan(v)) { std::snprintf(out, size, "nan"); return; }
+        if (std::isinf(v)) { std::snprintf(out, size, v < 0 ? "-inf" : "inf"); return; }
+
+        char digits[32];
+        int exponent = 0;
+        const int count = shortestDigits(v, digits, exponent);
+        const bool negative = std::signbit(v);
+
+        // exponent is the power of ten of the first digit plus one, so that
+        // the value is 0.d1d2... x 10^exponent. Positional layout is used
+        // while the point still falls inside or just after the digits, which
+        // is where the app's conversion puts the boundary.
+        std::string text;
+        if (exponent > 16 || exponent < -3) {
+            text += digits[0];
+            // A single digit takes no point at all in exponent form: the app
+            // prints 1e+16, not 1.0e+16. Positional form is the opposite way
+            // round and always keeps one, which is why the two are written
+            // out separately rather than sharing a tail.
+            if (count > 1) {
+                text += '.';
+                text.append(digits + 1, static_cast<size_t>(count - 1));
+            }
+            const int e = exponent - 1;
+            char tail[16];
+            std::snprintf(tail, sizeof tail, "e%c%02d", e < 0 ? '-' : '+', e < 0 ? -e : e);
+            text += tail;
+        } else if (exponent <= 0) {
+            text += "0.";
+            for (int i = 0; i < -exponent; ++i) text += '0';
+            text.append(digits, static_cast<size_t>(count));
+        } else if (count <= exponent) {
+            text.append(digits, static_cast<size_t>(count));
+            for (int i = count; i < exponent; ++i) text += '0';
+            text += ".0";
+        } else {
+            text.append(digits, static_cast<size_t>(exponent));
+            text += '.';
+            text.append(digits + exponent, static_cast<size_t>(count - exponent));
+        }
+
+        std::snprintf(out, size, "%s%s", negative ? "-" : "", text.c_str());
+    }
+
+private:
+    // The fewest significant digits that read back as the same double. Asked
+    // for one more each time rather than computed, because correctness here
+    // is what matters and seventeen tries is not a cost anyone can measure.
+    static int shortestDigits(double v, char *digits, int &exponent) {
+        char buffer[64];
+        for (int precision = 1; precision <= 17; ++precision) {
+            std::snprintf(buffer, sizeof buffer, "%.*e", precision - 1, v);
+            if (std::strtod(buffer, nullptr) == v) return unpack(buffer, digits, exponent);
+        }
+        std::snprintf(buffer, sizeof buffer, "%.17e", v);
+        return unpack(buffer, digits, exponent);
+    }
+
+    // Takes '-1.2340e+05' apart into the digits '1234' and the exponent 6,
+    // dropping the trailing zeros printf insisted on.
+    static int unpack(const char *buffer, char *digits, int &exponent) {
+        int count = 0;
+        const char *p = buffer;
+        if (*p == '-' || *p == '+') ++p;
+        for (; *p && *p != 'e' && *p != 'E'; ++p) {
+            if (*p >= '0' && *p <= '9') digits[count++] = *p;
+        }
+        while (count > 1 && digits[count - 1] == '0') --count;
+        exponent = (*p ? std::atoi(p + 1) : 0) + 1;
+        return count;
+    }
+};
+
 class Console {
 public:
     void printInt(int32_t value) {
         std::printf("%d ", static_cast<int>(value));
+        lineHasText_ = true;
+    }
+
+    // A real prints to a fixed number of decimal places rather than to the
+    // shortest spelling that round trips. Fixed, because a column is read
+    // down its digits and '1.0' beside '0.3333333333333333' cannot be.
+    void printReal(double value) {
+        char text[400];
+        if (std::isfinite(value) && (value < 1e15 && value > -1e15)) {
+            std::snprintf(text, sizeof text, "%.*f", scalarPlaces_, value);
+        } else {
+            Shortest::write(text, sizeof text, value);
+        }
+        std::printf("%s ", text);
         lineHasText_ = true;
     }
 
@@ -82,6 +190,7 @@ public:
 
 private:
     bool lineHasText_ = false;
+    int scalarPlaces_ = 7;
 };
 
 Console &console() {
@@ -146,7 +255,42 @@ int32_t shm_int_ge(int32_t a, int32_t b) { return a >= b ? 1 : 0; }
 int32_t shm_int_and(int32_t a, int32_t b) { return (a != 0 && b != 0) ? 1 : 0; }
 int32_t shm_int_or(int32_t a, int32_t b)  { return (a != 0 || b != 0) ? 1 : 0; }
 
+double shm_real_add(double a, double b) { return a + b; }
+double shm_real_sub(double a, double b) { return a - b; }
+double shm_real_mul(double a, double b) { return a * b; }
+double shm_real_div(double a, double b) { return a / b; }
+double shm_real_mod(double a, double b) { return std::fmod(a, b); }
+double shm_real_pow(double a, double b) { return std::pow(a, b); }
+
+int32_t shm_real_eq(double a, double b) { return a == b ? 1 : 0; }
+int32_t shm_real_ne(double a, double b) { return a != b ? 1 : 0; }
+int32_t shm_real_lt(double a, double b) { return a <  b ? 1 : 0; }
+int32_t shm_real_gt(double a, double b) { return a >  b ? 1 : 0; }
+int32_t shm_real_le(double a, double b) { return a <= b ? 1 : 0; }
+int32_t shm_real_ge(double a, double b) { return a >= b ? 1 : 0; }
+int32_t shm_real_and(double a, double b) { return (a != 0 && b != 0) ? 1 : 0; }
+int32_t shm_real_or(double a, double b)  { return (a != 0 || b != 0) ? 1 : 0; }
+
+double shm_int_to_real(int32_t value) { return static_cast<double>(value); }
+
+// The one narrowing the language performs silently, and it can still fail:
+// the fraction is dropped without a word, but a magnitude no int can hold is
+// refused rather than wrapped.
+int32_t shm_real_to_int(double value) {
+    const double truncated = std::trunc(value);
+    if (!(truncated >= -2147483648.0 && truncated <= 2147483647.0)) {
+        char text[400];
+        Shortest::write(text, sizeof text, value);
+        char message[440];
+        std::snprintf(message, sizeof message, "Cannot convert %s to int", text);
+        fail(message);
+    }
+    return static_cast<int32_t>(truncated);
+}
+
 void shm_print_int(int32_t value) { console().printInt(value); }
+
+void shm_print_real(double value) { console().printReal(value); }
 
 void shm_line_end(void) { console().endLine(); }
 

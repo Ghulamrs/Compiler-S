@@ -1,0 +1,25 @@
+fun <> = main() {
+  int  n : 5
+  real x : 1.5
+  real y
+  int  k
+  ? n x y k
+  n : n + 1
+  x : x * 2.0
+  ? n x
+  n +: 10
+  x -: 0.5
+  ? n x
+  ? n + x
+  ? n / 2 n / 2.0
+  ? 1. / 3.
+  z : 7
+  w : 2.5
+  ? z w z * w
+  int t : x
+  ? t
+  ? 1e300 * 1e300
+  ? 0. / 0.
+  ? 2.^0.5
+  ? 7.5 % 2.
+}

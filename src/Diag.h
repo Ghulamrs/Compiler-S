@@ -38,12 +38,25 @@ public:
     void error(int line, const std::string& text);
     void warning(int line, const std::string& text);
 
+    // Something the language has and this compiler has not reached yet.
+    //
+    // It is kept apart from an error on purpose. An error is a statement
+    // about the program; this is a statement about the compiler, and saying
+    // so in the vocabulary of a language diagnostic would teach the reader
+    // that their correct program is wrong. It goes to standard error, names
+    // itself as the compiler speaking, and exits with a status of its own.
+    void unsupported(int line, const std::string& what);
+
+    bool hasUnsupported() const { return !unsupported_.empty(); }
+    const std::vector<Message>& unsupportedItems() const { return unsupported_; }
+
     bool hasErrors() const { return errors_ > 0; }
     const std::vector<Message>& messages() const { return messages_; }
     void writeTo(std::string& out) const;
 
 private:
     std::vector<Message> messages_;
+    std::vector<Message> unsupported_;
     int errors_ = 0;
 };
 

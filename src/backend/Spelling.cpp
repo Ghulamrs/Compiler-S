@@ -26,6 +26,16 @@ const RegNames table[] = {
     {"xmm6", "xmm6", "xmm6"}, {"xmm7", "xmm7", "xmm7"}
 };
 
+std::string hex(uint64_t value) {
+    static const char *digits = "0123456789ABCDEF";
+    std::string out;
+    do {
+        out.insert(out.begin(), digits[value & 0xFu]);
+        value >>= 4;
+    } while (value != 0);
+    return out;
+}
+
 }  // namespace
 
 const char *Spelling::name(Reg r, int width) {
@@ -49,6 +59,10 @@ std::string GnuSpelling::reg(Reg r, int width) const {
 
 std::string GnuSpelling::imm(int64_t value) const {
     return "$" + std::to_string(value);
+}
+
+std::string GnuSpelling::wideImm(uint64_t value) const {
+    return "$0x" + hex(value);
 }
 
 std::string GnuSpelling::binary(const char *mnemonic, int width,
@@ -83,6 +97,13 @@ std::string MasmSpelling::reg(Reg r, int width) const {
 
 std::string MasmSpelling::imm(int64_t value) const {
     return std::to_string(value);
+}
+
+// MASM reads a hexadecimal constant by its trailing 'h', and refuses one that
+// starts with a letter - so a leading zero goes in front whether it is needed
+// or not.
+std::string MasmSpelling::wideImm(uint64_t value) const {
+    return "0" + hex(value) + "h";
 }
 
 // Destination first, and no suffix: the register operand carries the width.

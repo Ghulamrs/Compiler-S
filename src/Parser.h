@@ -68,10 +68,24 @@ private:
     // reporting anything.
     bool startsTerm() const;
 
+    // The shapes that can only begin a statement: an identifier followed by
+    // one of the four assignment spellings. A print or return item list stops
+    // when it sees one - and also at a line boundary, which is the half that
+    // covers the case this does not: a bare call on the next line, since
+    // 'identifier(' is not recognised here.
+    bool looksLikeNewStatement(size_t at) const;
+
     std::unique_ptr<Function> parseFunction();
     Block parseBlock();
     StmtPtr parseStatement();
+    StmtPtr parseDeclaration();
+    StmtPtr parseAssignment();
     StmtPtr parsePrint();
+
+    // 'int', 'real' or 'char' at the head of a statement. The same words open
+    // a conversion, which is why this asks what follows them.
+    bool atDeclaration() const;
+    const Type *scalarTypeHere();
     // One method per precedence tier, loosest first. '^' is the only
     // right-associative one and recurses into itself for that reason.
     ExprPtr parseExpression();

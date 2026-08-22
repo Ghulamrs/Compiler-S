@@ -29,6 +29,11 @@ public:
     virtual std::string reg(Reg r, int width) const = 0;
     virtual std::string imm(int64_t value) const = 0;
 
+    // A full-width constant, written in hexadecimal because that is the only
+    // spelling both assemblers read the same way for a value above the signed
+    // range - which the bit pattern of a double regularly is.
+    virtual std::string wideImm(uint64_t value) const = 0;
+
     // src is read and dst is written, whichever order the syntax prints them.
     virtual std::string binary(const char *mnemonic, int width,
                                const std::string &src, const std::string &dst) const = 0;
@@ -51,6 +56,7 @@ class GnuSpelling : public Spelling {
 public:
     std::string reg(Reg r, int width) const override;
     std::string imm(int64_t value) const override;
+    std::string wideImm(uint64_t value) const override;
     std::string binary(const char *mnemonic, int width,
                        const std::string &src, const std::string &dst) const override;
     std::string unary(const char *mnemonic, int width,
@@ -69,6 +75,7 @@ class MasmSpelling : public Spelling {
 public:
     std::string reg(Reg r, int width) const override;
     std::string imm(int64_t value) const override;
+    std::string wideImm(uint64_t value) const override;
     std::string binary(const char *mnemonic, int width,
                        const std::string &src, const std::string &dst) const override;
     std::string unary(const char *mnemonic, int width,

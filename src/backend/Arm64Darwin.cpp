@@ -37,28 +37,60 @@ void Arm64DarwinEmitter::endFunction() {
     instruction("ret");
 }
 
-void Arm64DarwinEmitter::loadInt(int32_t value) {
-    // mov takes a sixteen-bit immediate, so a wider constant is built from
-    // its two halves. The assembler's synthetic 'mov reg, #imm' would do this
-    // too, but only for a value it can encode - writing both halves here
-    // means every int32 is reachable, negative ones included.
-    const uint32_t bits = static_cast<uint32_t>(value);
-    instruction("movz\tw0, #" + std::to_string(bits & 0xFFFFu));
-    const uint32_t high = (bits >> 16) & 0xFFFFu;
-    if (high != 0) instruction("movk\tw0, #" + std::to_string(high) + ", lsl #16");
+void Arm64DarwinEmitter::materialise(const std::string &reg, uint64_t bits, bool wide) {
+    const int chunks = wide ? 4 : 2;
+    instruction("movz\t" + reg + ", #" + std::to_string(bits & 0xFFFFu));
+    for (int i = 1; i < chunks; ++i) {
+        const uint64_t part = (bits >> (16 * i)) & 0xFFFFu;
+        if (part == 0) continue;
+        instruction("movk\t" + reg + ", #" + std::to_string(part) +
+                    ", lsl #" + std::to_string(16 * i));
+    }
 }
 
-void Arm64DarwinEmitter::spillInt(int slot) {
+void Arm64DarwinEmitter::loadIntConstant(int32_t value) {
+    materialise("w0", static_cast<uint32_t>(value), false);
+}
+
+// Built in a scratch integer register and moved across. x9 is a caller-saved
+// temporary, so nothing of ours is live in it.
+void Arm64DarwinEmitter::loadRealConstant(double value) {
+    materialise("x9", bitsOf(value), true);
+    instruction("fmov\td0, x9");
+}
+
+void Arm64DarwinEmitter::storeIntSlot(int slot) {
     instruction("str\tw0, " + slotAddress(slot));
 }
 
-void Arm64DarwinEmitter::loadSlotIntoIntArg(int slot, int index) {
-    instruction("ldr\tw" + std::to_string(index) + ", " + slotAddress(slot));
+void Arm64DarwinEmitter::loadIntSlot(int slot) {
+    instruction("ldr\tw0, " + slotAddress(slot));
+}
+
+void Arm64DarwinEmitter::storeRealSlot(int slot) {
+    instruction("str\td0, " + slotAddress(slot));
+}
+
+void Arm64DarwinEmitter::loadRealSlot(int slot) {
+    instruction("ldr\td0, " + slotAddress(slot));
 }
 
 void Arm64DarwinEmitter::setIntArg(int index) {
     if (index == 0) return;           // the accumulator is already w0
     instruction("mov\tw" + std::to_string(index) + ", w0");
+}
+
+void Arm64DarwinEmitter::setRealArg(int index) {
+    if (index == 0) return;           // the accumulator is already d0
+    instruction("fmov\td" + std::to_string(index) + ", d0");
+}
+
+void Arm64DarwinEmitter::loadIntSlotIntoArg(int slot, int index) {
+    instruction("ldr\tw" + std::to_string(index) + ", " + slotAddress(slot));
+}
+
+void Arm64DarwinEmitter::loadRealSlotIntoArg(int slot, int index) {
+    instruction("ldr\td" + std::to_string(index) + ", " + slotAddress(slot));
 }
 
 void Arm64DarwinEmitter::callRuntime(const std::string &name) {
