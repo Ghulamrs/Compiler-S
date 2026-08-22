@@ -6,3 +6,7 @@ shc
 *.asm
 tests/out/
 .DS_Store
+
+# Xcode's per-user state, which is not the project
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/
