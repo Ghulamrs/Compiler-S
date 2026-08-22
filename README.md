@@ -96,6 +96,28 @@ preference: the language measures dimensions rather than declaring them, so
 after `real A[2][5]` and `A[0] : {1.,2.}` the answer to `A[0].row` is 2. A
 row is a value that can be replaced, so a row has to be a thing.
 
+## Finding the rest of the program
+
+Shalimar has no `include` and no `import`. A call to a function this file does
+not define is looked for in the project's other files, and what is found is
+compiled in — so a program becomes a library by renaming its `main()` to
+something a caller can say, and nothing else about it changes.
+
+```
+$ shc main.shl -o main
+shc: also compiled geometry.shl
+```
+
+Only functions are looked for; a brought-in function carries its own file's
+globals and can see no others. Nothing arrives that was not asked for, which
+is why a directory of programs is the ordinary case rather than a collision.
+A wanted name in two files is refused naming both. A diagnostic names the file
+when it is not the program's own, at compile time and at run time alike, and a
+single-file program therefore prints exactly what it always printed.
+
+The whole of it, including what it costs — a program that reaches into another
+file no longer runs in the app — is [docs/CROSSFILE.md](docs/CROSSFILE.md).
+
 ## Testing
 
 There are two suites and they ask different questions. **`tests/cases`** asks
@@ -127,11 +149,12 @@ committed, so neither of the other machines needs Swift or the app.
 ./tests/remote-linux.sh     build with real g++ and run the suite on the box
 ./tests/remote-windows.sh   assemble with ml64 and run on the Windows box
 ./tests/record.sh           re-record expected output from the interpreter
+./tests/cross.sh            finding the rest of the program in the other files
 ./tests/shortest.sh         the compact spelling of a double, against Swift
 ```
 
-The standing result, all three green: **74 cases on the host and on Linux, 42
-on Windows** - the other 32 are diagnostics, which the compiler produces on
+The standing result, all three green: **74 cases plus 11 cross-file ones on
+the host and on Linux, 42 on Windows** - the other 32 are diagnostics, which the compiler produces on
 whichever machine it runs on and the Windows box therefore never sees.
 
 `tests/remote-linux.sh` is not only a second target. It is the only thing

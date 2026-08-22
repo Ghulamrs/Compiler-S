@@ -14,6 +14,7 @@
 #include "backend/Emitter.h"
 
 #include <string>
+#include <set>
 #include <vector>
 
 namespace shalimar {
@@ -24,7 +25,8 @@ class CodeGen : public NodeVisitor {
 public:
     explicit CodeGen(Emitter &emitter) : emitter_(emitter) {}
 
-    void run(Program &program, const std::string &sourceName);
+    void run(Program &program, const std::string &sourceName,
+             const std::vector<std::string> &units);
 
     void visit(IntLit &node) override;
     void visit(RealLit &node) override;
@@ -59,6 +61,7 @@ public:
 
 private:
     Emitter &emitter_;
+    std::vector<std::string> units_;
 
     // Evaluation slots sit above the named variables in the frame, so the
     // base moves with the function.
@@ -68,7 +71,7 @@ private:
     int reserve();
     void release();
 
-    void generate(Function &function);
+    void generate(Function &function, const std::set<int> &nameFiles = std::set<int>());
     void generate(Stmt &statement);
     void generate(Block &body);
     void evaluate(Expr &expr);

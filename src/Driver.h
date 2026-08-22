@@ -17,6 +17,10 @@ public:
 
 private:
     std::string input_;
+    // The other files the program may reach into. Named on the command line,
+    // or found beside the program when none is named.
+    std::vector<std::string> companions_;
+    bool search_ = true;
     std::string output_;
     std::string targetName_;
     std::string runtimeObject_;
@@ -30,8 +34,17 @@ private:
 
     std::string defaultRuntimeObject(const std::string &targetName) const;
     static std::string stem(const std::string &path);
+    // The file's own name, without the directories in front of it.
+    static std::string leafOf(const std::string &path);
     static std::string directoryOf(const std::string &path);
     static bool readFile(const std::string &path, std::string &into);
+
+    // The Shalimar files beside the program, which is what 'the project' means
+    // to a compiler that was handed one file. Sorted, so that two runs of the
+    // same compiler on the same directory agree about everything including
+    // which file a clash is reported against.
+    static std::vector<std::string> shalimarFilesIn(const std::string &directory);
+    static bool looksLikeShalimar(const std::string &name);
     static bool writeFile(const std::string &path, const std::string &text);
     static int shell(const std::string &command);
 };

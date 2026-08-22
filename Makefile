@@ -37,6 +37,7 @@ SOURCES := \
   src/Ast.cpp \
   src/Parser.cpp \
   src/Check.cpp \
+  src/Resolve.cpp \
   src/Builtin.cpp \
   runtime/Shortest.cpp \
   src/CodeGen.cpp \

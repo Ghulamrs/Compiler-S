@@ -14,26 +14,39 @@ std::string CodeGen::mangle(const std::string &name) {
     return "shmf_" + name;
 }
 
-void CodeGen::run(Program &program, const std::string &sourceName) {
+void CodeGen::run(Program &program, const std::string &sourceName,
+                  const std::vector<std::string> &units) {
     emitter_.beginModule(sourceName);
     emitter_.defineGlobals(program.globalSlots());
+    units_ = units;
 
     // The globals are created in file order, before main() runs, which is
     // where a global whose initializer calls a function that reads a later
     // global still fails - a cycle rather than an ordering, and the one case
     // the checker leaves to the run.
+    // The files, named for the runtime, before anything can fail in one. Only
+    // the ones something was taken from: a file the compiler looked in and did
+    // not use is not part of this program.
+    std::set<int> named;
+    for (std::unique_ptr<Function> &f : program.functions()) {
+        if (f->proto().unit > 0) named.insert(f->proto().unit);
+    }
+    for (StmtPtr &g : program.globals()) {
+        if (g->unit() > 0) named.insert(g->unit());
+    }
+
     Function &initializer = program.initializer();
     initializer.body().clear();
     for (StmtPtr &declaration : program.globals()) {
         initializer.body().push_back(StmtPtr(declaration.release()));
     }
-    generate(initializer);
+    generate(initializer, named);
 
     for (std::unique_ptr<Function> &f : program.functions()) generate(*f);
     emitter_.endModule();
 }
 
-void CodeGen::generate(Function &function) {
+void CodeGen::generate(Function &function, const std::set<int> &nameFiles) {
     const Prototype &proto = function.proto();
     evaluationBase_ = function.frame().evaluationBase();
     depth_ = 0;
@@ -82,6 +95,17 @@ void CodeGen::generate(Function &function) {
         emitter_.loadIntConstant(proto.id);
         emitter_.setArg(Slot::Int, 0);
         emitter_.call("shm_enter");
+    }
+
+    for (int unit : nameFiles) {
+        if (static_cast<size_t>(unit) >= units_.size()) continue;
+        const int id = newBytesId();
+        emitter_.defineBytes(id, units_[static_cast<size_t>(unit)] + std::string(1, '\0'));
+        emitter_.loadBytesAddress(id);
+        emitter_.setArg(Slot::Wide, 1);
+        emitter_.loadIntConstant(unit);
+        emitter_.setArg(Slot::Int, 0);
+        emitter_.call("shm_name_file");
     }
 
     for (StmtPtr &s : function.body()) generate(*s);
@@ -147,7 +171,7 @@ void CodeGen::generate(Stmt &statement) {
     // told which one that is before the statement runs. One call per
     // statement rather than one per expression is exactly the resolution the
     // language promises.
-    emitter_.setLine(statement.line());
+    emitter_.setLine(statement.unit(), statement.line());
     statement.accept(*this);
 }
 

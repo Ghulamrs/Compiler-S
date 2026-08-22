@@ -2,8 +2,8 @@
 
 namespace shalimar {
 
-Parser::Parser(const std::vector<Token> &tokens, Diagnostics &diagnostics)
-    : tokens_(tokens), diag_(diagnostics) {}
+Parser::Parser(const std::vector<Token> &tokens, Diagnostics &diagnostics, int unit)
+    : tokens_(tokens), diag_(diagnostics), unit_(unit) {}
 
 const Token &Parser::peek(size_t ahead) const {
     static const Token endOfInput;
@@ -42,7 +42,7 @@ void Parser::fail(const std::string &text) {
 
 void Parser::fail(int line, const std::string &text) {
     if (failed_) return;
-    diag_.error(line > 0 ? line : lastLine(), text);
+    diag_.error(unit_, line > 0 ? line : lastLine(), text);
     failed_ = true;
 }
 
@@ -148,6 +148,7 @@ std::unique_ptr<Function> Parser::parseFunction() {
     }
     if (!expect(Tok::ParensClose, unexpected())) return nullptr;
 
+    proto.unit = unit_;
     blockDepth_ = 0;
     Block body = parseBlock();
     if (failed_) return nullptr;
@@ -172,7 +173,15 @@ Block Parser::parseBlock() {
     return body;
 }
 
+// Every statement is stamped with the file it was read from as it leaves the
+// parser, so that nothing below has to be told twice.
 StmtPtr Parser::parseStatement() {
+    StmtPtr made = parseStatementBody();
+    if (made) made->setUnit(unit_);
+    return made;
+}
+
+StmtPtr Parser::parseStatementBody() {
     if (at(Tok::PrintLine) || at(Tok::PrintInline)) return parsePrint();
     if (atDeclaration()) {
         if (blockDepth_ > 1) {

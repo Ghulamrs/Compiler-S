@@ -396,11 +396,18 @@ class Stmt : public Node {
 public:
     int line() const { return line_; }
 
+    // Which source file it came from. Set once, by the parser, from the unit
+    // it was parsing - a statement cannot be spread over two files, and a
+    // function cannot either.
+    int unit() const { return unit_; }
+    void setUnit(int unit) { unit_ = unit; }
+
 protected:
     explicit Stmt(int line) : line_(line) {}
 
 private:
     int line_;
+    int unit_ = 0;
 };
 
 using StmtPtr = std::unique_ptr<Stmt>;
@@ -712,6 +719,10 @@ struct Prototype {
     // Its place in the program, which is the index the runtime counts
     // recursion depth against.
     int id = 0;
+    // Which source file it was written in. A function is wholly in one, which
+    // is what lets the runtime be told once per call rather than once per
+    // statement.
+    int unit = 0;
 
     // Where a call puts its results. None: nothing. One: the accumulator.
     // More: the caller lends an address for each and the function returns

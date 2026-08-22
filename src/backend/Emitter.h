@@ -150,8 +150,13 @@ public:
     // Tell the runtime which statement is executing, so that a failure names
     // it. Written as a call rather than a store to a global because a global
     // has to be addressed, and addressing one is three different spellings.
-    void setLine(int line) {
+    // Which statement, and which file. The file travels with the line rather
+    // than being set once per function, because it has to be restored when a
+    // call returns and there is no call stack here to restore it from.
+    void setLine(int unit, int line) {
         loadIntConstant(line);
+        setArg(Slot::Int, 1);
+        loadIntConstant(unit);
         setArg(Slot::Int, 0);
         call("shm_line");
     }

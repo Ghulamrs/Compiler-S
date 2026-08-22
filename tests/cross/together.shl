@@ -1,0 +1,7 @@
+fun <> = main() {
+  banner(1)
+  ? area(3.0, 4.0)
+  ? hyp(3.0, 4.0)
+  ? nearly(0.1 + 0.2, 0.3)
+  demo()
+}

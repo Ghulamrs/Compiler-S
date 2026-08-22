@@ -25,7 +25,9 @@ namespace shalimar {
 
 class Parser {
 public:
-    Parser(const std::vector<Token> &tokens, Diagnostics &diagnostics);
+    // `unit` is which file these tokens came from: 0 for the program's own,
+    // and higher for one the compiler went looking in.
+    Parser(const std::vector<Token> &tokens, Diagnostics &diagnostics, int unit = 0);
 
     // Null when the program did not parse; the reason is in the diagnostics.
     std::unique_ptr<Program> parse();
@@ -35,6 +37,7 @@ private:
     Diagnostics &diag_;
     size_t index_ = 0;
     bool failed_ = false;
+    int unit_ = 0;
 
     // End of input is virtual: peeking past the end manufactures an
     // EndOfInput token rather than indexing out of bounds, which is what lets
@@ -80,6 +83,7 @@ private:
     std::unique_ptr<Function> parseFunction();
     Block parseBlock();
     StmtPtr parseStatement();
+    StmtPtr parseStatementBody();
     StmtPtr parseDeclaration();
     StmtPtr parseAssignment();
     StmtPtr parsePrint();

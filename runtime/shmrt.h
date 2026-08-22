@@ -37,11 +37,21 @@ void shm_user_main(void);
 // emits it, even when there are none, so the runtime can always call it.
 void shm_init_globals(void);
 
-// Which statement is executing. Set once per statement, because a runtime
-// error names the statement containing it rather than the expression: only
-// statements carry a line, and a per-expression one would need a call stack
-// to be worth having.
-void shm_line(int32_t line);
+// Which statement is executing, and which file it is in. Set once per
+// statement, because a runtime error names the statement containing it rather
+// than the expression: only statements carry a line, and a per-expression one
+// would need a call stack to be worth having.
+//
+// The file travels with the line rather than being set once per function,
+// because it has to be restored when a call returns and there is no call
+// stack here to restore it from. One more register on a call already being
+// made is cheaper than a second call, or than being wrong.
+void shm_line(int32_t unit, int32_t line);
+
+// What to call a file in a message. Unit 0 is the program's own and is never
+// named - a single-file program prints exactly what the app prints - so only
+// the files the compiler went looking in are registered.
+void shm_name_file(int32_t unit, const char *name);
 
 // Arithmetic. Every int operation can fail, which is why they are here rather
 // than inline: passing an int limit is always an error, never a wrapped value

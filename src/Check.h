@@ -90,6 +90,7 @@ private:
     Diagnostics &diag_;
     Program *program_ = nullptr;
     int line_ = 0;
+    int unit_ = 0;
     Function *function_ = nullptr;
     Scope scope_;
     int strings_ = 0;

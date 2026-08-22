@@ -19,11 +19,23 @@ class Position {
 public:
     static Position &shared();
 
-    void set(int32_t line) { line_ = line; }
+    void set(int32_t unit, int32_t line) { unit_ = unit; line_ = line; }
     int32_t line() const { return line_; }
 
+    void name(int32_t unit, const char *file);
+    // Empty for the program's own file, which is never named.
+    const char *file() const;
+
 private:
+    // More files than five, which is what a project here is expected to hold,
+    // and enough that a directory of programs cannot overflow it. A unit past
+    // the end simply goes unnamed, which is the old behaviour rather than a
+    // wrong one.
+    static const int capacity = 64;
+
+    int32_t unit_ = 0;
     int32_t line_ = 0;
+    const char *names_[capacity] = {0};
 };
 
 // A runtime failure. Output already printed survives - the error follows it

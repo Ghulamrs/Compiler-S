@@ -4,6 +4,7 @@
 #include "CodeGen.h"
 #include "Diag.h"
 #include "Parser.h"
+#include "Resolve.h"
 #include "Target.h"
 #include "Token.h"
 #include "backend/Emitter.h"
@@ -13,6 +14,13 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <algorithm>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dirent.h>
+#endif
 
 namespace shalimar {
 
@@ -24,7 +32,14 @@ void Driver::usage() const {
         "  -S                 stop after writing assembly\n"
         "  -c                 stop after assembling\n"
         "  --target=<name>    arm64-darwin | x86_64-linux | x86_64-windows\n"
-        "  --runtime=<path>   the runtime object to link against\n";
+        "  --runtime=<path>   the runtime archive to link against\n"
+        "  --no-search        do not look in the other files beside this one\n"
+        "\n"
+        "  A call to a function this file does not define is looked for in the\n"
+        "  other Shalimar files beside it, and what is found is compiled in.\n"
+        "  There is nothing to declare and nothing to list: a program becomes\n"
+        "  a library by renaming its main() to something a caller can say.\n"
+        "  Naming files after the program uses those instead of looking.\n";
 }
 
 std::string Driver::stem(const std::string &path) {
@@ -32,6 +47,11 @@ std::string Driver::stem(const std::string &path) {
     std::string base = slash == std::string::npos ? path : path.substr(slash + 1);
     size_t dot = base.find_last_of('.');
     return dot == std::string::npos ? base : base.substr(0, dot);
+}
+
+std::string Driver::leafOf(const std::string &path) {
+    size_t slash = path.find_last_of("/\\");
+    return slash == std::string::npos ? path : path.substr(slash + 1);
 }
 
 // Both separators, deliberately. Being hosted on a platform is a separate
@@ -58,6 +78,42 @@ bool Driver::writeFile(const std::string &path, const std::string &text) {
     return out.good();
 }
 
+bool Driver::looksLikeShalimar(const std::string &name) {
+    const char *suffixes[] = {".shl", ".shm"};
+    for (int i = 0; i < 2; ++i) {
+        const size_t n = std::string(suffixes[i]).size();
+        if (name.size() > n && name.compare(name.size() - n, n, suffixes[i]) == 0) return true;
+    }
+    return false;
+}
+
+// What 'the project' means to a compiler that was handed one file: the other
+// Shalimar files beside it. Sorted, so that two runs agree about everything
+// including which of two clashing files a diagnostic is reported against.
+std::vector<std::string> Driver::shalimarFilesIn(const std::string &directory) {
+    std::vector<std::string> found;
+#ifdef _WIN32
+    WIN32_FIND_DATAA entry;
+    HANDLE handle = FindFirstFileA((directory + "\\*").c_str(), &entry);
+    if (handle == INVALID_HANDLE_VALUE) return found;
+    do {
+        if (looksLikeShalimar(entry.cFileName))
+            found.push_back(directory + "\\" + entry.cFileName);
+    } while (FindNextFileA(handle, &entry));
+    FindClose(handle);
+#else
+    DIR *open = opendir(directory.c_str());
+    if (!open) return found;
+    while (struct dirent *entry = readdir(open)) {
+        if (looksLikeShalimar(entry->d_name))
+            found.push_back(directory + "/" + entry->d_name);
+    }
+    closedir(open);
+#endif
+    std::sort(found.begin(), found.end());
+    return found;
+}
+
 int Driver::shell(const std::string &command) {
     return std::system(command.c_str());
 }
@@ -79,6 +135,8 @@ bool Driver::parseArguments(const std::vector<std::string> &arguments) {
             targetName_ = a.substr(9);
         } else if (a.compare(0, 10, "--runtime=") == 0) {
             runtimeObject_ = a.substr(10);
+        } else if (a == "--no-search") {
+            search_ = false;
         } else if (a == "-h" || a == "--help") {
             usage();
             return false;
@@ -88,8 +146,9 @@ bool Driver::parseArguments(const std::vector<std::string> &arguments) {
         } else if (input_.empty()) {
             input_ = a;
         } else {
-            std::cerr << "shc: one program at a time\n";
-            return false;
+            // The first file is the program; the rest are where to look. Only
+            // one main() is ever compiled, and it is the first file's.
+            companions_.push_back(a);
         }
     }
     if (input_.empty()) {
@@ -110,28 +169,75 @@ int Driver::run(const std::vector<std::string> &arguments) {
         return 2;
     }
 
-    std::string source;
-    if (!readFile(input_, source)) {
-        std::cerr << "shc: cannot read " << input_ << "\n";
-        return 2;
+    // The program, and the other files it may reach into. Named ones win; a
+    // program named alone gets the ones beside it, unless --no-search.
+    std::vector<std::string> files;
+    files.push_back(input_);
+    if (!companions_.empty()) {
+        for (const std::string &name : companions_) files.push_back(name);
+    } else if (search_) {
+        for (const std::string &beside : shalimarFilesIn(directoryOf(input_))) {
+            if (beside != input_ && stem(beside) != stem(input_)) files.push_back(beside);
+        }
     }
 
-    // Lex. Tokenizing stops at the offending character, so nothing downstream
-    // is trustworthy and the error is reported alone.
-    LexResult lexed = tokenize(source);
-    if (lexed.failed) {
-        Diagnostics diagnostics;
-        diagnostics.error(lexed.errorLine, lexed.error);
-        std::string text;
-        diagnostics.writeTo(text);
-        std::cout << text;
-        return 1;
-    }
-
-    // Parse. Reported one at a time; parsing stops at the first.
     Diagnostics diagnostics;
-    Parser parser(lexed.tokens, diagnostics);
-    std::unique_ptr<Program> program = parser.parse();
+    std::vector<std::string> names;
+    for (const std::string &path : files) names.push_back(leafOf(path));
+    diagnostics.nameUnits(names);
+
+    std::vector<Unit> units;
+    for (size_t i = 0; i < files.size(); ++i) {
+        std::string source;
+        if (!readFile(files[i], source)) {
+            std::cerr << "shc: cannot read " << files[i] << "\n";
+            return 2;
+        }
+
+        // Lex. Tokenizing stops at the offending character, so nothing
+        // downstream is trustworthy and the error is reported alone.
+        LexResult lexed = tokenize(source);
+        if (lexed.failed) {
+            // A file the compiler went looking in is not the program, and a
+            // program should not be refused because something else in the
+            // directory does not lex. It is dropped, and said so.
+            if (i > 0) {
+                std::cerr << "shc: ignoring " << names[i] << ": " << lexed.error << "\n";
+                continue;
+            }
+            diagnostics.error(static_cast<int>(i), lexed.errorLine, lexed.error);
+            std::string text;
+            diagnostics.writeTo(text);
+            std::cout << text;
+            return 1;
+        }
+
+        // Parse. Reported one at a time; parsing stops at the first.
+        Diagnostics quiet;
+        Parser parser(lexed.tokens, i == 0 ? diagnostics : quiet, static_cast<int>(i));
+        std::unique_ptr<Program> parsed = parser.parse();
+        if (i > 0) {
+            if (!parsed) {
+                std::string why;
+                quiet.writeTo(why);
+                if (!why.empty() && why[why.size() - 1] == '\n') why.resize(why.size() - 1);
+                std::cerr << "shc: ignoring " << names[i] << ": " << why << "\n";
+                continue;
+            }
+            Unit other;
+            other.name = names[i];
+            other.program = std::move(parsed);
+            units.push_back(std::move(other));
+            continue;
+        }
+        Unit first;
+        first.name = names[0];
+        first.program = std::move(parsed);
+        units.insert(units.begin(), std::move(first));
+    }
+
+    std::unique_ptr<Program> program;
+    if (!units.empty() && units[0].program) program = std::move(units[0].program);
     if (diagnostics.hasUnsupported()) {
         for (const Message &m : diagnostics.unsupportedItems()) {
             std::cerr << "shc: not compiled yet: " << m.text
@@ -144,6 +250,30 @@ int Driver::run(const std::vector<std::string> &arguments) {
         diagnostics.writeTo(text);
         std::cout << text;
         return 1;
+    }
+
+    // Find the rest of the program. A call this file does not answer is
+    // looked for in the others, and what is found is moved in - along with
+    // whatever it calls in turn, and the globals of its own file that it
+    // reads. Nothing arrives that was not asked for, which is why a file's
+    // main() never does.
+    if (program && units.size() > 1) {
+        std::vector<Unit> others(std::make_move_iterator(units.begin() + 1),
+                                 std::make_move_iterator(units.end()));
+        Resolver resolver(diagnostics);
+        if (!resolver.resolve(units[0] = Unit{names[0], std::move(program)}, others)) {
+            std::string text;
+            diagnostics.writeTo(text);
+            std::cout << text;
+            return 1;
+        }
+        program = std::move(units[0].program);
+
+        // Said out loud, on standard error so it can never be mistaken for
+        // the program's own output. A program that quietly grew a dependency
+        // on another file is a program that will one day be moved without it.
+        for (const std::string &from : resolver.used())
+            std::cerr << "shc: also compiled " << from << "\n";
     }
 
     // Check. Unlike the two stages above it does not stop at the first
@@ -172,7 +302,7 @@ int Driver::run(const std::vector<std::string> &arguments) {
 
     std::unique_ptr<Emitter> emitter = target->newEmitter();
     CodeGen generator(*emitter);
-    generator.run(*program, input_);
+    generator.run(*program, input_, names);
 
     if (output_.empty()) output_ = stem(input_);
 

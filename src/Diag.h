@@ -26,8 +26,14 @@ struct Message {
     Severity severity;
     int line;                   // 0 means the program as a whole
     std::string text;
+    // Which source file it is in. Unit 0 is the program's own, and is not
+    // named: 'Error: line 3: ...' is what the app prints and what every
+    // single-file program must keep on printing. A file the compiler went
+    // looking in is named, because otherwise the line number points at a file
+    // the reader is not looking at.
+    int unit = 0;
 
-    std::string formatted() const;
+    std::string formatted(const std::vector<std::string> &units) const;
 };
 
 // The checker does not stop at the first problem, so diagnostics accumulate
@@ -37,6 +43,11 @@ class Diagnostics {
 public:
     void error(int line, const std::string& text);
     void warning(int line, const std::string& text);
+    void error(int unit, int line, const std::string& text);
+    void warning(int unit, int line, const std::string& text);
+
+    // The files, in the order they were given numbers. Unit 0 is the program.
+    void nameUnits(const std::vector<std::string>& names) { units_ = names; }
 
     // Something the language has and this compiler has not reached yet.
     //
@@ -57,6 +68,7 @@ public:
 private:
     std::vector<Message> messages_;
     std::vector<Message> unsupported_;
+    std::vector<std::string> units_;
     int errors_ = 0;
 };
 

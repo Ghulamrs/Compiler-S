@@ -1,0 +1,22 @@
+// geometry.shl - was a program of its own; its main is now called demo,
+// which is the whole of what it took to make it a library.
+real tolerance : 1e-9
+
+fun <real> = area(w: real, h: real) {
+  return w * h
+}
+
+fun <real> = hyp(a: real, b: real) {
+  return sqrt(area(a, a) + area(b, b))
+}
+
+fun <int> = nearly(a: real, b: real) {
+  if abs(a - b) < tolerance {
+    return 1
+  }
+  return 0
+}
+
+fun <> = demo() {
+  ? "geometry demo" area(2.0, 3.0)
+}
