@@ -8,9 +8,9 @@
 //
 // It also rewrites. A conversion the language performs silently is inserted
 // here as a node, so that by the time the code generator sees the tree every
-// value has one type and nothing is implicit. And it measures: how many
-// names a function declares and how deeply its expressions nest are both
-// answered by this walk, because it is the only pass that sees both.
+// value has one type and nothing is implicit. And it measures: how many names
+// a function declares and how deeply its expressions nest are both answered
+// by this walk, because it is the only pass that sees both.
 #pragma once
 
 #include "Ast.h"
@@ -23,7 +23,7 @@
 namespace shalimar {
 
 // The names visible at one point in a function. Blocks nest, so a variable
-// first assigned inside an 'if' is gone after it - which is the app's rule
+// first assigned inside an 'if' is gone after it - which is the app's rule,
 // and not an obvious one, since a declaration may only appear at the top of a
 // function body and so always outlives every block.
 class Scope {
@@ -45,7 +45,6 @@ public:
         return nullptr;
     }
 
-    // Only the innermost level, which is what a redeclaration has to ask.
     bool definedHere(const std::string &name) const {
         return !levels_.empty() && levels_.back().count(name) != 0;
     }
@@ -59,74 +58,66 @@ class Checker : public NodeVisitor {
 public:
     explicit Checker(Diagnostics &diagnostics) : diag_(diagnostics) {}
 
-    // False when the program must not run. Diagnostics hold the reasons, and
-    // there may be several.
     bool check(Program &program);
 
     void visit(IntLit &node) override;
     void visit(RealLit &node) override;
+    void visit(StrLit &node) override;
+    void visit(ArrayLit &node) override;
+    void visit(Blank &node) override;
     void visit(Var &node) override;
+    void visit(Index &node) override;
+    void visit(Dim &node) override;
+    void visit(Precision &node) override;
     void visit(Convert &node) override;
     void visit(Binary &node) override;
+    void visit(Call &node) override;
+
     void visit(Declare &node) override;
     void visit(Assign &node) override;
+    void visit(CompoundAssign &node) override;
+    void visit(MultiAssign &node) override;
+    void visit(CallStmt &node) override;
+    void visit(Return &node) override;
     void visit(Print &node) override;
     void visit(If &node) override;
     void visit(While &node) override;
     void visit(For &node) override;
     void visit(Break &node) override;
     void visit(Continue &node) override;
-    void visit(Call &node) override;
-    void visit(Return &node) override;
-    void visit(MultiAssign &node) override;
-    void visit(CallStmt &node) override;
-    void visit(StrLit &node) override;
 
 private:
     Diagnostics &diag_;
     Program *program_ = nullptr;
-    int line_ = 0;               // the statement being checked
+    int line_ = 0;
     Function *function_ = nullptr;
-    int strings_ = 0;            // how many string literals have been numbered
     Scope scope_;
-    int depth_ = 0;              // evaluation slots in use right now
+    int strings_ = 0;
 
     void check(Function &function);
     void check(Stmt &statement);
 
-    // Types the expression and returns its type; null when it could not be
-    // typed, which is how a diagnostic already reported is not reported again.
     const Type *typeOf(ExprPtr &expr);
-
-    // Wraps the expression in a Convert if it is not already the wanted type.
-    // Every implicit conversion in the language comes through here, in both
-    // directions, so there is one place that decides what one means.
     void coerce(ExprPtr &expr, const Type *to);
-
-    // Where an int and a real meet, the int widens. Null when they cannot.
     const Type *common(const Type *a, const Type *b) const;
 
-    // Tracks how deep the evaluation stack has to be for this function: the
-    // left operand waits in a slot while the right is evaluated.
-    void deeper();
-    void shallower();
-
-    // A condition may be any scalar; zero is false and anything else is true.
     void checkCondition(ExprPtr &expr);
     void checkBlock(Block &body);
 
-    // What the two loop-bound rules need and nothing more. Division is left
-    // out deliberately: '/' means one thing between ints and another between
-    // reals, and a folder that got that wrong would report a bound the
-    // program never uses.
+    // The type an array literal has, worked out from its shape and from the
+    // first slot that holds something. A literal blank all the way down has a
+    // shape but no type, which is why this can answer null.
+    const Type *literalType(ArrayLit &node);
+    void coerceLiteral(ArrayLit &node, const Type *arrayType);
+
     bool constantNumber(const Expr &expr, double &value) const;
     void warnIfLoopNeverRuns(For &node);
     static std::string number(double value);
-
-    // Whether the block ends on a path that has returned. A function that
-    // declares outputs must return them on every path; falling off the end is
-    // an error rather than an implicit empty return.
     static bool alwaysReturns(const Block &body);
+
+    // A name that cannot be written: 'pi' and 'e'.
+    bool refuseConstant(const std::string &name, const char *what);
+
 };
 
 }  // namespace shalimar

@@ -107,6 +107,14 @@ private:
     ExprPtr parseMultiplicative();
     ExprPtr parsePower();
     ExprPtr parsePrimary();
+    ExprPtr parsePostfix(ExprPtr base);
+    ExprPtr parseInitializer();
+    ExprPtr parseArrayLiteral();
+
+    // 'prec' is recognized only as the head of a print item and only when a
+    // '(' follows, so it stays an ordinary name everywhere else - a variable
+    // called 'prec' still works, and '? prec' still prints it.
+    bool atPrecisionDirective() const;
 };
 
 }  // namespace shalimar

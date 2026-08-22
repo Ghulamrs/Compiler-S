@@ -57,9 +57,11 @@ public:
     // What is at the address in a register.
     virtual std::string indirect(Reg base, int width) const = 0;
 
-    // A frame slot: an offset from the base pointer. MASM wants the width
-    // written on the reference because the other operand may not carry it;
-    // GNU puts the width on the mnemonic instead and needs none here.
+    // A frame slot: an offset upward from the stack pointer. From the stack
+    // pointer rather than the base pointer because the offsets have to be
+    // known before the frame's size is - the prologue is written after the
+    // body. MASM wants the width on the reference because the other operand
+    // may not carry it; GNU puts it on the mnemonic and needs none here.
     virtual std::string frameSlot(int offset, int width) const = 0;
 
     // How a named byte array is opened, and how its bytes are written.

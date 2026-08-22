@@ -44,10 +44,19 @@ public:
     virtual void beginModule(const std::string &sourceName) = 0;
     virtual void endModule() = 0;
 
-    // `slots` is how many eight-byte places the frame must hold. The checker
-    // worked it out while it typed the function.
-    virtual void beginFunction(const std::string &name, int slots) = 0;
-    virtual void endFunction() = 0;
+    // The frame's size is not known until the body has been written: how
+    // many places a function needs is exactly how many the generator turned
+    // out to reserve, and any second party that predicts that will one day
+    // predict it wrong - which is a store past the end of a frame, and reads
+    // as a corrupted array three statements away.
+    //
+    // So beginFunction writes the symbol and remembers where the prologue
+    // goes, the body is written, and endFunction puts the prologue in. That
+    // works only because a slot's address does not depend on the total: they
+    // are counted upward from the stack pointer, not downward from the frame
+    // pointer.
+    virtual void beginFunction(const std::string &name) = 0;
+    virtual void endFunction(int slots) = 0;
 
     virtual void loadIntConstant(int32_t value) = 0;
     virtual void loadRealConstant(double value) = 0;

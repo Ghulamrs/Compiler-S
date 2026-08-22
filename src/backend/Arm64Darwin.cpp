@@ -16,16 +16,8 @@ void Arm64DarwinEmitter::endModule() {
     blank();
 }
 
-// Slots are addressed upward from sp rather than downward from x29.
-//
-// A negative offset from the frame pointer needs the unscaled form of ldr and
-// str, which reaches only -256 - so the thirty-third slot of a function is
-// already out of range, and the assembler says so in terms of an index rather
-// than of a frame. A positive offset from sp is the scaled form, which
-// reaches 32760 for an eight-byte access. sp does not move inside a function
-// here, which is what makes the two addressings interchangeable.
-std::string Arm64DarwinEmitter::slotAddress(int slot) const {
-    return "[sp, #" + std::to_string(frameBytes_ - 8 * (slot + 1)) + "]";
+std::string Arm64DarwinEmitter::slotAddress(int slot) {
+    return "[sp, #" + std::to_string(8 * slot) + "]";
 }
 
 char Arm64DarwinEmitter::registerFile(Slot kind) {
@@ -41,26 +33,30 @@ std::string Arm64DarwinEmitter::labelName(int id) {
     return "Lshm" + std::to_string(id);
 }
 
-void Arm64DarwinEmitter::beginFunction(const std::string &name, int slots) {
-    // The stack pointer must stay sixteen-byte aligned, so the reservation is
-    // rounded up rather than taken as it comes.
-    frameBytes_ = (slots * 8 + 15) & ~15;
-
+void Arm64DarwinEmitter::beginFunction(const std::string &name) {
     blank();
     raw("\t.globl\t" + symbol(name));
     raw("\t.p2align\t2");
     raw(symbol(name) + ":");
-    // stp with a pre-index writes the pair and moves sp in one instruction,
-    // and sixteen bytes is what the alignment wanted anyway.
-    instruction("stp\tx29, x30, [sp, #-" + std::to_string(frameRecordBytes) + "]!");
-    instruction("mov\tx29, sp");
-    if (frameBytes_ > 0) instruction("sub\tsp, sp, #" + std::to_string(frameBytes_));
+    prologueMark_ = text_.size();
 }
 
-void Arm64DarwinEmitter::endFunction() {
+void Arm64DarwinEmitter::endFunction(int slots) {
+    // The stack pointer must stay sixteen-byte aligned, so the reservation is
+    // rounded up rather than taken as it comes.
+    frameBytes_ = (slots * 8 + 15) & ~15;
+
     if (frameBytes_ > 0) instruction("add\tsp, sp, #" + std::to_string(frameBytes_));
     instruction("ldp\tx29, x30, [sp], #" + std::to_string(frameRecordBytes));
     instruction("ret");
+
+    // stp with a pre-index writes the pair and moves sp in one instruction,
+    // and sixteen bytes is what the alignment wanted anyway.
+    std::string prologue;
+    prologue += "\tstp\tx29, x30, [sp, #-" + std::to_string(frameRecordBytes) + "]!\n";
+    prologue += "\tmov\tx29, sp\n";
+    if (frameBytes_ > 0) prologue += "\tsub\tsp, sp, #" + std::to_string(frameBytes_) + "\n";
+    text_.insert(prologueMark_, prologue);
 }
 
 void Arm64DarwinEmitter::materialise(const std::string &reg, uint64_t bits, bool wide) {
@@ -115,7 +111,7 @@ void Arm64DarwinEmitter::call(const std::string &name) {
 }
 
 void Arm64DarwinEmitter::loadSlotAddress(int slot) {
-    instruction("add\tx0, sp, #" + std::to_string(frameBytes_ - 8 * (slot + 1)));
+    instruction("add\tx0, sp, #" + std::to_string(8 * slot));
 }
 
 // x9 is a caller-saved temporary, so the pointer can be brought out of its

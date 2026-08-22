@@ -37,6 +37,7 @@ SOURCES := \
   src/Ast.cpp \
   src/Parser.cpp \
   src/Check.cpp \
+  src/Builtin.cpp \
   src/CodeGen.cpp \
   src/Target.cpp \
   src/backend/Emitter.cpp \
@@ -46,9 +47,17 @@ SOURCES := \
   src/backend/X86_64Linux.cpp \
   src/backend/X86_64Windows.cpp
 
+RUNTIME_SOURCES := \
+  runtime/Failure.cpp \
+  runtime/Numbers.cpp \
+  runtime/Array.cpp \
+  runtime/Console.cpp \
+  runtime/Runtime.cpp
+
 OBJECTS := $(patsubst %.cpp,$(BUILD)/%.o,$(SOURCES))
-DEPENDS := $(OBJECTS:.o=.d)
-RUNTIME := lib/shmrt-$(TARGET).o
+RUNTIME_OBJECTS := $(patsubst %.cpp,$(BUILD)/%.o,$(RUNTIME_SOURCES))
+DEPENDS := $(OBJECTS:.o=.d) $(RUNTIME_OBJECTS:.o=.d)
+RUNTIME := lib/shmrt-$(TARGET).a
 
 all: shc $(RUNTIME)
 
@@ -61,9 +70,9 @@ $(BUILD)/%.o: %.cpp
 
 -include $(DEPENDS)
 
-$(RUNTIME): runtime/Runtime.cpp runtime/shmrt.h
+$(RUNTIME): $(RUNTIME_OBJECTS)
 	@mkdir -p lib
-	$(CXX) $(CXXFLAGS) -c -o $@ runtime/Runtime.cpp
+	$(AR) rcs $@ $(RUNTIME_OBJECTS)
 
 test: all
 	./tests/run.sh

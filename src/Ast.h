@@ -33,6 +33,7 @@ class Convert;
 class Binary;
 class Declare;
 class Assign;
+class CompoundAssign;
 class Print;
 class If;
 class While;
@@ -44,6 +45,11 @@ class Return;
 class MultiAssign;
 class CallStmt;
 class StrLit;
+class ArrayLit;
+class Blank;
+class Index;
+class Dim;
+class Precision;
 
 class NodeVisitor {
 public:
@@ -60,6 +66,7 @@ public:
     virtual void visit(Binary &) = 0;
     virtual void visit(Declare &) = 0;
     virtual void visit(Assign &) = 0;
+    virtual void visit(CompoundAssign &) = 0;
     virtual void visit(Print &) = 0;
     virtual void visit(If &) = 0;
     virtual void visit(While &) = 0;
@@ -71,6 +78,11 @@ public:
     virtual void visit(MultiAssign &) = 0;
     virtual void visit(CallStmt &) = 0;
     virtual void visit(StrLit &) = 0;
+    virtual void visit(ArrayLit &) = 0;
+    virtual void visit(Blank &) = 0;
+    virtual void visit(Index &) = 0;
+    virtual void visit(Dim &) = 0;
+    virtual void visit(Precision &) = 0;
 };
 
 class Node {
@@ -165,12 +177,21 @@ public:
     const Symbol *symbol() const { return symbol_; }
     void resolve(const Symbol *s) { symbol_ = s; }
 
-    bool isAddressable() const override { return true; }
+    // 'pi' and 'e' are values rather than storage, so a Var may turn out to
+    // be one. Nothing can write them, which is why one name means one thing
+    // here and there is no shadowing to arrange.
+    bool isNamedConstant() const { return constant_; }
+    double constant() const { return value_; }
+    void resolveConstant(double value) { constant_ = true; value_ = value; }
+
+    bool isAddressable() const override { return !constant_; }
     void accept(NodeVisitor &v) override { v.visit(*this); }
 
 private:
     std::string name_;
     const Symbol *symbol_ = nullptr;
+    bool constant_ = false;
+    double value_ = 0.0;
 };
 
 // Inserted by the checker wherever the language converts, which it does in
@@ -247,11 +268,92 @@ private:
     int id_ = 0;
 };
 
+// '{1.0,,}' - a literal whose commas fix its shape. It carries its own
+// extents, which is why it is the one right-hand side that may create an
+// array: there is nothing left to infer.
+class ArrayLit : public Expr {
+public:
+    void add(ExprPtr element) { elements_.push_back(std::move(element)); }
+    std::vector<ExprPtr> &elements() { return elements_; }
+    const std::vector<ExprPtr> &elements() const { return elements_; }
+
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+
+private:
+    std::vector<ExprPtr> elements_;
+};
+
+// An omitted slot: the gap in '{1.0,,}'. It holds the place so the commas
+// still describe the shape, and it stands for the zero of the element type.
+// A blank carries no type, which is why a literal blank all the way down has
+// a shape but nothing to create an array from.
+class Blank : public Expr {
+public:
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+};
+
+class Index : public Expr {
+public:
+    Index(ExprPtr base, ExprPtr index)
+        : base_(std::move(base)), index_(std::move(index)) {}
+
+    Expr &base() const { return *base_; }
+    Expr &index() const { return *index_; }
+    ExprPtr &baseRef() { return base_; }
+    ExprPtr &indexRef() { return index_; }
+
+    bool isAddressable() const override { return true; }
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+
+private:
+    ExprPtr base_;
+    ExprPtr index_;
+};
+
+// 'A.row' is axis 0, 'A.col' is axis 1, 'A.dim(n)' is axis n. One node for
+// all three because they ask the same question - .row and .col are the two
+// axes a matrix uses often enough to deserve names, and they work at any
+// rank. The spelling is carried only so a diagnostic can quote it back.
+class Dim : public Expr {
+public:
+    Dim(ExprPtr base, ExprPtr axis, std::string spelling)
+        : base_(std::move(base)), axis_(std::move(axis)), spelling_(std::move(spelling)) {}
+
+    ExprPtr &base() { return base_; }
+    ExprPtr &axis() { return axis_; }
+    const std::string &spelling() const { return spelling_; }
+
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+
+private:
+    ExprPtr base_;
+    ExprPtr axis_;
+    std::string spelling_;
+};
+
+// '? prec(10)' - a print-list directive, not a value. It prints nothing and
+// applies from that point on, including the rest of its own line.
+class Precision : public Expr {
+public:
+    explicit Precision(ExprPtr places) : places_(std::move(places)) {}
+
+    ExprPtr &places() { return places_; }
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+
+private:
+    ExprPtr places_;
+};
+
 struct Prototype;
 
 class Call : public Expr {
 public:
     Call(std::string callee, int line) : callee_(std::move(callee)), line_(line) {}
+
+    // A built-in, named by its index in the table in Builtin.cpp. Exactly one
+    // of this and prototype() is set once the checker has run.
+    int builtin() const { return builtin_; }
+    void resolveBuiltin(int index) { builtin_ = index; }
 
     void add(ExprPtr argument) { arguments_.push_back(std::move(argument)); }
 
@@ -276,6 +378,7 @@ private:
     int line_;
     const Prototype *prototype_ = nullptr;
     int scratchBase_ = 0;
+    int builtin_ = -1;
 };
 
 // ----------------------------------------------------------------- statements
@@ -302,7 +405,16 @@ public:
     Declare(const Type *type, std::string name, ExprPtr initial, int line)
         : Stmt(line), type_(type), name_(std::move(name)), initial_(std::move(initial)) {}
 
+    void addExtent(ExprPtr extent) { extents_.push_back(std::move(extent)); }
+    std::vector<ExprPtr> &extents() { return extents_; }
+
+    // Where the extents are written down for the runtime to read: one slot
+    // each, in order, so that their address can be handed over as an array.
+    int extentBase() const { return extentBase_; }
+    void setExtentBase(int base) { extentBase_ = base; }
+
     const Type *declaredType() const { return type_; }
+    void setDeclaredType(const Type *type) { type_ = type; }
     const std::string &name() const { return name_; }
     ExprPtr &initial() { return initial_; }        // may be null
     const Symbol *symbol() const { return symbol_; }
@@ -313,8 +425,10 @@ public:
 private:
     const Type *type_;
     std::string name_;
+    std::vector<ExprPtr> extents_;
     ExprPtr initial_;
     const Symbol *symbol_ = nullptr;
+    int extentBase_ = 0;
 };
 
 // 'x : expr'. '=' in the same position is a fallback spelling accepted
@@ -331,12 +445,41 @@ public:
     const Symbol *symbol() const { return symbol_; }
     void resolve(const Symbol *s) { symbol_ = s; }
 
+    // True when the name did not exist and this assignment made it. An array
+    // may be created this way only from a literal, which carries its own
+    // shape; anything else has nothing to infer extents from.
+    bool creates() const { return creates_; }
+    void setCreates(bool value) { creates_ = value; }
+
     void accept(NodeVisitor &v) override { v.visit(*this); }
 
 private:
     ExprPtr target_;
     ExprPtr expr_;
     const Symbol *symbol_ = nullptr;
+    bool creates_ = false;
+};
+
+// 'x +: e' and 'x -: e'. Kept as its own statement rather than expanded into
+// 'x : x + e' by the parser, because the target may be an element and the
+// expansion would then need two copies of the index expression. The code
+// generator walks the one target twice instead - once to read it and once to
+// write it - which is also what the app's interpreter does.
+class CompoundAssign : public Stmt {
+public:
+    CompoundAssign(ExprPtr target, bool add, ExprPtr expr, int line)
+        : Stmt(line), target_(std::move(target)), expr_(std::move(expr)), add_(add) {}
+
+    ExprPtr &target() { return target_; }
+    ExprPtr &expr() { return expr_; }
+    bool isAdd() const { return add_; }
+
+    void accept(NodeVisitor &v) override { v.visit(*this); }
+
+private:
+    ExprPtr target_;
+    ExprPtr expr_;
+    bool add_;
 };
 
 // '?' prints its items and appends a newline; '??' prints them and does not.
@@ -524,21 +667,18 @@ class Frame {
 public:
     static const int slotBytes = 8;
 
+    // Named places, and the hidden ones a loop or a call needs to hold
+    // something for the length of a statement. The checker allocates these,
+    // because it is the pass that knows the names.
     int addVariable() { return variables_++; }
 
-    // Where an operand waits while its sibling is evaluated. These sit above
-    // the variables, so the depth is counted separately and added at the end.
-    void needEvaluationDepth(int depth) {
-        if (depth > evaluationDepth_) evaluationDepth_ = depth;
-    }
-
     int variables() const { return variables_; }
+    // Where the evaluation slots start. How many there are is the code
+    // generator's answer and nobody else's - see Emitter::beginFunction.
     int evaluationBase() const { return variables_; }
-    int slots() const { return variables_ + evaluationDepth_; }
 
 private:
     int variables_ = 0;
-    int evaluationDepth_ = 0;
 };
 
 // A parameter. An array is a reference always; a scalar is one only when it

@@ -63,7 +63,7 @@ int Driver::shell(const std::string &command) {
 }
 
 std::string Driver::defaultRuntimeObject(const std::string &targetName) const {
-    return directoryOf(program_) + "/lib/shmrt-" + targetName + ".o";
+    return directoryOf(program_) + "/lib/shmrt-" + targetName + ".a";
 }
 
 bool Driver::parseArguments(const std::vector<std::string> &arguments) {

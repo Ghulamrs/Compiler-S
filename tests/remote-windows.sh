@@ -30,7 +30,7 @@ rm -rf "$WORK"; mkdir -p "$WORK"
 # and the alternative is a suite that silently tests the previous runtime
 # against this compiler's calls - which fails as a link error if you are lucky
 # and as a wrong answer if you are not.
-scp -q runtime/Runtime.cpp runtime/shmrt.h "$HOSTNAME_:$REMOTE\\runtime\\"
+scp -q runtime/*.cpp runtime/*.h "$HOSTNAME_:$REMOTE\\runtime\\"
 ssh -n "$HOSTNAME_" "cmd /c $REMOTE\\setup.bat" | grep -q RUNTIME_BUILT || {
     echo "the runtime did not build on $HOSTNAME_" >&2; exit 2; }
 

@@ -17,8 +17,8 @@ public:
     void beginModule(const std::string &sourceName) override;
     void endModule() override;
 
-    void beginFunction(const std::string &name, int slots) override;
-    void endFunction() override;
+    void beginFunction(const std::string &name) override;
+    void endFunction(int slots) override;
 
     void loadIntConstant(int32_t value) override;
     void loadRealConstant(double value) override;
@@ -48,10 +48,16 @@ private:
     // x29 and x30 saved at the top of the frame, everything else below it.
     static const int frameRecordBytes = 16;
 
+    size_t prologueMark_ = 0;
     int frameBytes_ = 0;
 
-    // Slot n sits below the frame record, at a negative offset from x29.
-    std::string slotAddress(int slot) const;
+    // Slot n is at sp + 8n, counted upward. Upward from the stack pointer
+    // rather than downward from the frame pointer, for two reasons: a
+    // negative offset from x29 needs the unscaled form of ldr, which reaches
+    // only -256, and an offset measured from the top of the frame would
+    // depend on the frame's size - which is not known until the body has been
+    // written.
+    static std::string slotAddress(int slot);
 
     // 'w', 'x' or 'd' - which register file and width a slot's traffic uses.
     static char registerFile(Slot kind);

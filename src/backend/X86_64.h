@@ -88,13 +88,17 @@ protected:
     // area at the bottom where a callee expects to find it. The whole is
     // rounded so that rsp is sixteen-byte aligned at every call - which is
     // what the ABI promises and what an SSE spill in a callee depends on.
-    void setSlots(int slots);
-    int frameBytes() const { return frameBytes_; }
-
+    // Slot n is at rsp + shadow + 8n, counted upward from the stack pointer.
+    // The shadow area a callee expects sits at the bottom, below the slots,
+    // and neither offset depends on the frame's total size - which is what
+    // lets the prologue be written after the body.
     std::string slotOperand(int slot, int width) const;
 
-    void emitPrologue();
-    void emitEpilogue();
+    std::string prologue(int slots);
+    void emitEpilogue(int slots);
+    int frameBytesFor(int slots) const;
+
+    size_t prologueMark_ = 0;
 
     // Names the module refers to but does not define. MASM wants each one
     // declared; the GNU assembler works them out for itself.
@@ -108,7 +112,6 @@ protected:
 private:
     std::vector<std::string> referenced_;
     std::vector<std::string> defined_;
-    int frameBytes_ = 0;
 
     // Which register, which mnemonic and which width a slot's traffic uses.
     static Reg registerFor(Slot kind);

@@ -44,6 +44,12 @@ public:
     void visit(MultiAssign &node) override;
     void visit(CallStmt &node) override;
     void visit(StrLit &node) override;
+    void visit(ArrayLit &node) override;
+    void visit(Blank &node) override;
+    void visit(Index &node) override;
+    void visit(Dim &node) override;
+    void visit(Precision &node) override;
+    void visit(CompoundAssign &node) override;
 
     // What a Shalimar function is called once it is a linker symbol.
     // Shalimar's main() is not the program's entry point - the runtime's is -
@@ -58,6 +64,7 @@ private:
     // base moves with the function.
     int evaluationBase_ = 0;
     int depth_ = 0;
+    int deepest_ = 0;
     int reserve();
     void release();
 
@@ -103,6 +110,23 @@ private:
     // parameter, in which case the slot holds the caller's address.
     void readSymbol(const Symbol &symbol);
     void writeSymbol(const Symbol &symbol);
+
+    // Arrays. The element kind is what the runtime is told when it is asked
+    // for one; the accessor is which of the four getters or setters an
+    // element of this type reaches.
+    static int elementKind(const Type *arrayType);
+    static const char *getterFor(const Type *elementType);
+    static const char *setterFor(const Type *elementType);
+
+    // Builds a literal into a fresh array and leaves the pointer in the
+    // accumulator.
+    void buildLiteral(ArrayLit &literal);
+    // Writes the extents into consecutive slots and asks for the array.
+    void makeArray(const Type *type, std::vector<ExprPtr> &extents, int extentBase);
+
+    // 'A[i] : v' - the base and the index are computed, then the value.
+    void assignElement(Index &target, Expr &value);
+    void generateBuiltin(Call &node);
 
     // Where a function's epilogue is, so that 'return' is a jump.
     int exitLabel_ = 0;

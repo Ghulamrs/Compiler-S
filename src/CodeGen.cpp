@@ -1,6 +1,9 @@
 #include "CodeGen.h"
 
+#include "Builtin.h"
 #include "backend/Emitter.h"
+
+#include "../runtime/shmrt.h"
 
 namespace shalimar {
 
@@ -18,10 +21,11 @@ void CodeGen::generate(Function &function) {
     const Prototype &proto = function.proto();
     evaluationBase_ = function.frame().evaluationBase();
     depth_ = 0;
+    deepest_ = 0;
     current_ = &function;
     exitLabel_ = newLabel();
 
-    emitter_.beginFunction(mangle(proto.name), function.frame().slots());
+    emitter_.beginFunction(mangle(proto.name));
 
     // Parameters come first and in order, so argument n goes to slot n. A
     // reference parameter's slot holds the caller's address rather than the
@@ -64,7 +68,7 @@ void CodeGen::generate(Function &function) {
     if (function.resultSlot() >= 0) {
         emitter_.loadSlot(slotKind(proto.outputs[0]), function.resultSlot());
     }
-    emitter_.endFunction();
+    emitter_.endFunction(function.frame().variables() + deepest_);
     current_ = nullptr;
 }
 
@@ -111,14 +115,54 @@ void CodeGen::evaluateCondition(Expr &expr) {
     emitter_.call("shm_real_truth");
 }
 
-int CodeGen::reserve() { return evaluationBase_ + depth_++; }
+// How many of these a function needs is not predicted anywhere: it is
+// counted here, as they are taken, and told to the emitter when the body is
+// finished. A frame sized by a second party's estimate is a store past its
+// end the first time the two disagree.
+int CodeGen::reserve() {
+    const int slot = evaluationBase_ + depth_++;
+    if (depth_ > deepest_) deepest_ = depth_;
+    return slot;
+}
+
 void CodeGen::release() { --depth_; }
 
 bool CodeGen::isReal(const Type *type) {
     return type && type->kind() == Type::Kind::Real;
 }
 
+// The scalar at the bottom of however many array layers. The runtime builds
+// the layers between for itself, given the rank.
+int CodeGen::elementKind(const Type *arrayType) {
+    switch (arrayType->scalar()->kind()) {
+    case Type::Kind::Real: return SHM_REAL;
+    case Type::Kind::Char: return SHM_CHAR;
+    default:               return SHM_INT;
+    }
+}
+
+const char *CodeGen::getterFor(const Type *elementType) {
+    if (elementType->isArray()) return "shm_get_ref";
+    switch (elementType->kind()) {
+    case Type::Kind::Real: return "shm_get_real";
+    case Type::Kind::Char: return "shm_get_char";
+    default:               return "shm_get_int";
+    }
+}
+
+const char *CodeGen::setterFor(const Type *elementType) {
+    if (elementType->isArray()) return "shm_set_ref";
+    switch (elementType->kind()) {
+    case Type::Kind::Real: return "shm_set_real";
+    case Type::Kind::Char: return "shm_set_char";
+    default:               return "shm_set_int";
+    }
+}
+
+// An array travels as a pointer, which is a wide integer; a char is a byte
+// held in an int; everything else is what it looks like.
 Slot CodeGen::slotKind(const Type *type) {
+    if (type && type->isArray()) return Slot::Wide;
     return isReal(type) ? Slot::Real : Slot::Int;
 }
 
@@ -157,20 +201,116 @@ void CodeGen::writeSymbol(const Symbol &symbol) {
 }
 
 void CodeGen::visit(Var &node) {
+    if (node.isNamedConstant()) {
+        emitter_.loadRealConstant(node.constant());
+        return;
+    }
     readSymbol(*node.symbol());
 }
 
+// A string literal is a char array made fresh each time it is evaluated,
+// from bytes that live in the module's read-only data.
 void CodeGen::visit(StrLit &node) {
     emitter_.defineBytes(node.id(), node.text() + std::string(1, '\0'));
+    emitter_.loadIntConstant(static_cast<int32_t>(node.text().size()));
+    emitter_.setArg(Slot::Int, 1);
     emitter_.loadBytesAddress(node.id());
+    emitter_.setArg(Slot::Wide, 0);
+    emitter_.call("shm_array_from_text");
+}
+
+void CodeGen::visit(Blank &) {
+    // A blank contributes nothing: the array it sits in arrived zeroed.
+}
+
+// One level at a time, each an array of its own. Building the whole shape in
+// one call would need every extent at once, and a literal's deeper extents
+// are only known by looking inside it - so the recursion that reads the
+// literal is the recursion that builds it.
+void CodeGen::buildLiteral(ArrayLit &literal) {
+    const Type *type = literal.type();
+    const Type *element = type->element();
+    const int slot = reserve();
+
+    const int dims = reserve();
+    emitter_.loadIntConstant(static_cast<int32_t>(literal.elements().size()));
+    emitter_.widenAccumulator();
+    emitter_.storeSlot(Slot::Wide, dims);
+    emitter_.loadSlotAddress(dims);
+    emitter_.setArg(Slot::Wide, 2);
+    emitter_.loadIntConstant(1);
+    emitter_.setArg(Slot::Int, 1);
+    emitter_.loadIntConstant(element->isArray() ? SHM_REF : elementKind(type));
+    emitter_.setArg(Slot::Int, 0);
+    emitter_.call("shm_array_make");
+    release();
+    emitter_.storeSlot(Slot::Wide, slot);
+
+    for (size_t i = 0; i < literal.elements().size(); ++i) {
+        Expr &item = *literal.elements()[i];
+        if (dynamic_cast<Blank *>(&item)) continue;
+        if (ArrayLit *nested = dynamic_cast<ArrayLit *>(&item)) buildLiteral(*nested);
+        else evaluate(item);
+        emitter_.setArg(slotKind(element), 2);
+        emitter_.loadIntConstant(static_cast<int32_t>(i));
+        emitter_.setArg(Slot::Int, 1);
+        emitter_.loadSlotIntoArg(Slot::Wide, slot, 0);
+        emitter_.call(setterFor(element));
+    }
+    release();
+    emitter_.loadSlot(Slot::Wide, slot);
+}
+
+void CodeGen::visit(ArrayLit &node) {
+    buildLiteral(node);
+}
+
+void CodeGen::visit(Index &node) {
+    const int slot = reserve();
+    evaluate(node.base());
+    emitter_.storeSlot(Slot::Wide, slot);
+    evaluate(node.index());
+    release();
+    emitter_.setArg(Slot::Int, 1);
+    emitter_.loadSlotIntoArg(Slot::Wide, slot, 0);
+    emitter_.call(getterFor(node.type()));
+}
+
+void CodeGen::visit(Dim &node) {
+    const int slot = reserve();
+    evaluate(*node.base());
+    emitter_.storeSlot(Slot::Wide, slot);
+    evaluate(*node.axis());
+    release();
+    emitter_.setArg(Slot::Int, 1);
+    emitter_.loadSlotIntoArg(Slot::Wide, slot, 0);
+    emitter_.call("shm_array_dim");
+}
+
+void CodeGen::visit(Precision &node) {
+    evaluate(*node.places());
+    emitter_.setArg(Slot::Int, 0);
+    emitter_.call("shm_print_places");
 }
 
 void CodeGen::visit(Convert &node) {
     evaluate(node.expr());
     const Type *from = node.expr().type();
-    if (from == node.type()) return;
+    const Type *to = node.type();
+    if (!from || from == to) return;
     passAccumulator(from, 0);
-    emitter_.call(isReal(node.type()) ? "shm_int_to_real" : "shm_real_to_int");
+
+    // A char is held in an int register, so widening out of one is free and
+    // only the narrowings need asking about.
+    if (to == Type::realType()) {
+        if (from == Type::realType()) return;
+        emitter_.call("shm_int_to_real");
+    } else if (to == Type::intType()) {
+        if (from == Type::charType()) return;
+        emitter_.call("shm_real_to_int");
+    } else if (to == Type::charType()) {
+        emitter_.call(from == Type::realType() ? "shm_real_to_char" : "shm_int_to_char");
+    }
 }
 
 // Left into a slot, right into the accumulator, then the runtime is asked
@@ -197,6 +337,24 @@ void CodeGen::visit(Binary &node) {
     // share a register.
     passAccumulator(operands, 1);
     passSlot(operands, slot, 0);
+
+    // Two strings join or compare. The comparison comes back as a number
+    // below, at or above zero, and the operator decides which of the six
+    // answers that is - so one runtime entry point serves all six.
+    if (operands->isArray()) {
+        if (node.op() == Binary::Op::Add) {
+            emitter_.call("shm_text_concat");
+            return;
+        }
+        emitter_.call("shm_text_compare");
+        emitter_.setArg(Slot::Int, 0);
+        emitter_.loadIntConstant(0);
+        emitter_.setArg(Slot::Int, 1);
+        // The comparison's answer is in argument 0 and zero is in argument 1,
+        // which is the order the int comparison wants.
+        emitter_.call(Binary::runtimeFor(node.op(), Type::intType()));
+        return;
+    }
     emitter_.call(Binary::runtimeFor(node.op(), operands));
 }
 
@@ -257,7 +415,37 @@ void CodeGen::generateCall(Call &node) {
     }
 }
 
+void CodeGen::generateBuiltin(Call &node) {
+    const Builtin &fn = builtin(node.builtin());
+
+    // 'len(A)' is the first dimension, asked of the array itself.
+    if (fn.shape == Builtin::Shape::Length) {
+        evaluate(*node.arguments()[0]);
+        emitter_.setArg(Slot::Wide, 0);
+        emitter_.loadIntConstant(0);
+        emitter_.setArg(Slot::Int, 1);
+        emitter_.call("shm_array_dim");
+        return;
+    }
+
+    const bool intAnswer = node.type() == Type::intType();
+    const Slot kind = intAnswer ? Slot::Int : Slot::Real;
+
+    std::vector<int> slots;
+    for (size_t i = 0; i < node.arguments().size(); ++i) {
+        slots.push_back(reserve());
+        evaluate(*node.arguments()[i]);
+        emitter_.storeSlot(kind, slots[i]);
+    }
+    for (size_t i = 0; i < node.arguments().size(); ++i) release();
+    for (size_t i = node.arguments().size(); i-- > 0;) {
+        emitter_.loadSlotIntoArg(kind, slots[i], static_cast<int>(i));
+    }
+    emitter_.call(intAnswer ? fn.intSymbol : fn.realSymbol);
+}
+
 void CodeGen::visit(Call &node) {
+    if (node.builtin() >= 0) { generateBuiltin(node); return; }
     generateCall(node);
     // In an expression a call is worth its first output, which a
     // multi-output function left in the first scratch slot.
@@ -267,7 +455,9 @@ void CodeGen::visit(Call &node) {
 }
 
 void CodeGen::visit(CallStmt &node) {
-    generateCall(static_cast<Call &>(*node.call()));
+    Call &call = static_cast<Call &>(*node.call());
+    if (call.builtin() >= 0) { generateBuiltin(call); return; }
+    generateCall(call);
 }
 
 void CodeGen::visit(Return &node) {
@@ -287,7 +477,16 @@ void CodeGen::visit(Return &node) {
 
 void CodeGen::visit(MultiAssign &node) {
     Call &call = static_cast<Call &>(*node.call());
+    if (call.builtin() >= 0) {
+        generateBuiltin(call);
+        writeSymbol(*node.targets()[0]);
+        return;
+    }
     generateCall(call);
+    if (!call.prototype()->returnsByPointer()) {
+        writeSymbol(*node.targets()[0]);
+        return;
+    }
     for (size_t i = 0; i < node.targets().size(); ++i) {
         emitter_.loadSlot(slotKind(node.targets()[i]->type()),
                           call.scratchBase() + static_cast<int>(i));
@@ -295,7 +494,44 @@ void CodeGen::visit(MultiAssign &node) {
     }
 }
 
+// Extents go into consecutive slots so that their address can be handed over
+// as an array. Slot n sits eight bytes above slot n-1, so extent i goes in
+// slot i and the runtime reads them in the order they were written.
+void CodeGen::makeArray(const Type *type, std::vector<ExprPtr> &extents, int extentBase) {
+    const int rank = static_cast<int>(extents.size());
+    for (int i = 0; i < rank; ++i) {
+        evaluate(*extents[i]);
+        emitter_.widenAccumulator();
+        emitter_.storeSlot(Slot::Wide, extentBase + i);
+    }
+    emitter_.loadSlotAddress(extentBase);
+    emitter_.setArg(Slot::Wide, 2);
+    emitter_.loadIntConstant(rank);
+    emitter_.setArg(Slot::Int, 1);
+    emitter_.loadIntConstant(elementKind(type));
+    emitter_.setArg(Slot::Int, 0);
+    emitter_.call("shm_array_make");
+}
+
 void CodeGen::visit(Declare &node) {
+    if (node.declaredType()->isArray()) {
+        makeArray(node.declaredType(), node.extents(), node.extentBase());
+        writeSymbol(*node.symbol());
+        if (!node.initial()) return;
+
+        // An initializer shorter than the array fills what it covers and
+        // leaves the rest zero, which is what shm_array_fill does.
+        const int slot = reserve();
+        evaluate(*node.initial());
+        emitter_.storeSlot(Slot::Wide, slot);
+        release();
+        emitter_.loadSlotIntoArg(Slot::Wide, slot, 1);
+        readSymbol(*node.symbol());
+        emitter_.setArg(Slot::Wide, 0);
+        emitter_.call("shm_array_fill");
+        return;
+    }
+
     if (!node.initial()) {
         // A declaration with no initializer is the zero of its type, and the
         // frame is not zeroed for us.
@@ -307,9 +543,138 @@ void CodeGen::visit(Declare &node) {
     writeSymbol(*node.symbol());
 }
 
+// 'A[i] : v'. The container and the index are computed first and parked,
+// because evaluating the value may itself be a call.
+void CodeGen::assignElement(Index &target, Expr &value) {
+    const Type *element = target.type();
+    const int container = reserve();
+    const int index = reserve();
+
+    evaluate(target.base());
+    emitter_.storeSlot(Slot::Wide, container);
+    evaluate(target.index());
+    emitter_.storeSlot(Slot::Int, index);
+    evaluate(value);
+    emitter_.setArg(slotKind(element), 2);
+    emitter_.loadSlotIntoArg(Slot::Int, index, 1);
+    emitter_.loadSlotIntoArg(Slot::Wide, container, 0);
+    emitter_.call(setterFor(element));
+
+    release();
+    release();
+}
+
 void CodeGen::visit(Assign &node) {
+    if (Index *element = dynamic_cast<Index *>(node.target().get())) {
+        assignElement(*element, *node.expr());
+        return;
+    }
+
+    const Symbol &symbol = *node.symbol();
+    if (!symbol.type()->isArray()) {
+        evaluate(*node.expr());
+        writeSymbol(symbol);
+        return;
+    }
+
+    // Assigning an array into a variable that already holds one copies into
+    // the storage already there rather than rebinding it: extents are fixed
+    // at declaration, and an array may be shared by reference with a caller,
+    // so swapping the storage would resize it underneath them.
+    const int slot = reserve();
     evaluate(*node.expr());
-    writeSymbol(*node.symbol());
+    emitter_.storeSlot(Slot::Wide, slot);
+    release();
+
+    if (node.creates()) {
+        // A name being made by this assignment has no storage to copy into.
+        // The literal or the joined string is already fresh; a plain variable
+        // is not, so it is copied - 't : s' makes a copy of s.
+        if (dynamic_cast<ArrayLit *>(node.expr().get()) ||
+            dynamic_cast<StrLit *>(node.expr().get()) ||
+            dynamic_cast<Binary *>(node.expr().get())) {
+            emitter_.loadSlot(Slot::Wide, slot);
+            writeSymbol(symbol);
+            return;
+        }
+        // Sized to the source, then filled from it.
+        emitter_.loadSlotIntoArg(Slot::Wide, slot, 1);
+        emitter_.loadIntConstant(0);
+        emitter_.setArg(Slot::Int, 0);
+        emitter_.call("shm_array_dim");
+        emitter_.widenAccumulator();
+        const int dims = reserve();
+        emitter_.storeSlot(Slot::Wide, dims);
+        emitter_.loadSlotAddress(dims);
+        emitter_.setArg(Slot::Wide, 2);
+        emitter_.loadIntConstant(1);
+        emitter_.setArg(Slot::Int, 1);
+        emitter_.loadIntConstant(elementKind(symbol.type()));
+        emitter_.setArg(Slot::Int, 0);
+        emitter_.call("shm_array_make");
+        release();
+        writeSymbol(symbol);
+    }
+
+    emitter_.loadSlotIntoArg(Slot::Wide, slot, 1);
+    readSymbol(symbol);
+    emitter_.setArg(Slot::Wide, 0);
+    emitter_.call("shm_array_fill");
+}
+
+// The target is walked twice: once as a value and once as a destination.
+// Sharing one tree rather than copying it is what keeps an index expression
+// from having to be duplicated, and evaluating it twice is what the app's
+// interpreter does too.
+void CodeGen::visit(CompoundAssign &node) {
+    const Type *type = node.target()->type();
+    const int slot = reserve();
+    evaluate(*node.target());
+    store(type, slot);
+    evaluate(*node.expr());
+    release();
+    passAccumulator(node.expr()->type(), 1);
+    passSlot(type, slot, 0);
+
+    if (type->isArray()) emitter_.call("shm_text_concat");
+    else emitter_.call(Binary::runtimeFor(node.isAdd() ? Binary::Op::Add : Binary::Op::Subtract,
+                                          type));
+
+    if (Index *element = dynamic_cast<Index *>(node.target().get())) {
+        // Recomputing the container and the index is the same double
+        // evaluation the read side did.
+        const int value = reserve();
+        store(type, value);
+        const int container = reserve();
+        const int index = reserve();
+        evaluate(element->base());
+        emitter_.storeSlot(Slot::Wide, container);
+        evaluate(element->index());
+        emitter_.storeSlot(Slot::Int, index);
+        load(type, value);
+        emitter_.setArg(slotKind(type), 2);
+        emitter_.loadSlotIntoArg(Slot::Int, index, 1);
+        emitter_.loadSlotIntoArg(Slot::Wide, container, 0);
+        emitter_.call(setterFor(type));
+        release();
+        release();
+        release();
+        return;
+    }
+
+    Var &target = static_cast<Var &>(*node.target());
+    if (type->isArray()) {
+        // Appending fits the result into the storage the string already has.
+        const int joined = reserve();
+        emitter_.storeSlot(Slot::Wide, joined);
+        emitter_.loadSlotIntoArg(Slot::Wide, joined, 1);
+        readSymbol(*target.symbol());
+        emitter_.setArg(Slot::Wide, 0);
+        emitter_.call("shm_array_fill");
+        release();
+        return;
+    }
+    writeSymbol(*target.symbol());
 }
 
 // Each item is printed followed by a single space; the newline is appended
@@ -318,14 +683,19 @@ void CodeGen::visit(Assign &node) {
 void CodeGen::visit(Print &node) {
     for (ExprPtr &item : node.items()) {
         evaluate(*item);
+        if (dynamic_cast<Precision *>(item.get())) {
+            evaluate(*item);          // a directive: it prints nothing itself
+            continue;
+        }
         const Type *type = item->type();
         if (type && type->isArray()) {
             emitter_.setArg(Slot::Wide, 0);
-            emitter_.call("shm_print_text");
+            emitter_.call("shm_print_array");
             continue;
         }
         passAccumulator(type, 0);
-        emitter_.call(isReal(type) ? "shm_print_real" : "shm_print_int");
+        if (type == Type::charType()) emitter_.call("shm_print_char");
+        else emitter_.call(isReal(type) ? "shm_print_real" : "shm_print_int");
     }
     if (node.newline()) emitter_.call("shm_line_end");
 }

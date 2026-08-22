@@ -9,21 +9,21 @@ void X86_64WindowsEmitter::beginModule(const std::string &sourceName) {
     // put in front in endModule().
 }
 
-void X86_64WindowsEmitter::beginFunction(const std::string &name, int slots) {
-    setSlots(slots);
+void X86_64WindowsEmitter::beginFunction(const std::string &name) {
     const std::string s = symbol(name);
     noteDefined(s);
     openProcedure_ = s;
     blank();
     raw("PUBLIC\t" + s);
     raw(s + "\tPROC");
-    emitPrologue();
+    prologueMark_ = text_.size();
 }
 
-void X86_64WindowsEmitter::endFunction() {
-    emitEpilogue();
+void X86_64WindowsEmitter::endFunction(int slots) {
+    emitEpilogue(slots);
     raw(openProcedure_ + "\tENDP");
     openProcedure_.clear();
+    text_.insert(prologueMark_, prologue(slots));
 }
 
 void X86_64WindowsEmitter::label(int id) {

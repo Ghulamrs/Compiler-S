@@ -29,18 +29,18 @@ void X86_64LinuxEmitter::endModule() {
     raw("\t.section\t.note.GNU-stack,\"\",@progbits");
 }
 
-void X86_64LinuxEmitter::beginFunction(const std::string &name, int slots) {
-    setSlots(slots);
+void X86_64LinuxEmitter::beginFunction(const std::string &name) {
     const std::string s = symbol(name);
     blank();
     raw("\t.globl\t" + s);
     raw("\t.type\t" + s + ", @function");
     raw(s + ":");
-    emitPrologue();
+    prologueMark_ = text_.size();
 }
 
-void X86_64LinuxEmitter::endFunction() {
-    emitEpilogue();
+void X86_64LinuxEmitter::endFunction(int slots) {
+    emitEpilogue(slots);
+    text_.insert(prologueMark_, prologue(slots));
 }
 
 void X86_64LinuxEmitter::label(int id) {

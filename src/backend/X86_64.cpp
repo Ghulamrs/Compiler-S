@@ -44,30 +44,34 @@ Reg X86_64Emitter::argRegister(Slot kind, int index) const {
     return kind == Slot::Real ? sseArg(index) : abi_.intArgs[index];
 }
 
-void X86_64Emitter::setSlots(int slots) {
-    // On entry rsp is eight past a multiple of sixteen; pushing rbp squares
-    // it, so the reservation itself has to be a multiple of sixteen to leave
-    // it that way for the next call.
-    frameBytes_ = (slots * 8 + abi_.shadowBytes + 15) & ~15;
+// On entry rsp is eight past a multiple of sixteen; pushing rbp squares it,
+// so the reservation itself has to be a multiple of sixteen to leave it that
+// way for the next call.
+int X86_64Emitter::frameBytesFor(int slots) const {
+    return (slots * 8 + abi_.shadowBytes + 15) & ~15;
 }
 
-// Slot n sits below rbp, above the shadow area at the bottom of the frame.
 std::string X86_64Emitter::slotOperand(int slot, int width) const {
-    return spelling_.frameSlot(-8 * (slot + 1), width);
+    return spelling_.frameSlot(abi_.shadowBytes + 8 * slot, width);
 }
 
-void X86_64Emitter::emitPrologue() {
-    instruction(spelling_.unary("push", 8, spelling_.reg(Reg::Bp, 8)));
-    instruction(spelling_.binary("mov", 8, spelling_.reg(Reg::Sp, 8), spelling_.reg(Reg::Bp, 8)));
-    if (frameBytes_ > 0) {
-        instruction(spelling_.binary("sub", 8, spelling_.imm(frameBytes_),
-                                     spelling_.reg(Reg::Sp, 8)));
+std::string X86_64Emitter::prologue(int slots) {
+    const int bytes = frameBytesFor(slots);
+    std::string out;
+    out += "\t" + spelling_.unary("push", 8, spelling_.reg(Reg::Bp, 8)) + "\n";
+    out += "\t" + spelling_.binary("mov", 8, spelling_.reg(Reg::Sp, 8),
+                                    spelling_.reg(Reg::Bp, 8)) + "\n";
+    if (bytes > 0) {
+        out += "\t" + spelling_.binary("sub", 8, spelling_.imm(bytes),
+                                        spelling_.reg(Reg::Sp, 8)) + "\n";
     }
+    return out;
 }
 
-void X86_64Emitter::emitEpilogue() {
-    if (frameBytes_ > 0) {
-        instruction(spelling_.binary("add", 8, spelling_.imm(frameBytes_),
+void X86_64Emitter::emitEpilogue(int slots) {
+    const int bytes = frameBytesFor(slots);
+    if (bytes > 0) {
+        instruction(spelling_.binary("add", 8, spelling_.imm(bytes),
                                      spelling_.reg(Reg::Sp, 8)));
     }
     instruction(spelling_.unary("pop", 8, spelling_.reg(Reg::Bp, 8)));
