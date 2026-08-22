@@ -43,7 +43,12 @@ make                      build shc and the host runtime
 ./tests/cross.sh          finding the rest of the program in the other files
 ./tests/debug.sh          stopping a program from inside itself
 ./tests/linking.sh        what an object holds, and why it is a whole program
+./tests/build-windows.sh  build shc itself on the Windows box, with cl
 ```
+
+`build.bat` is the MSVC build, and `cl` is the third toolchain the C++14 claim
+has to hold under. On that host the driver names `ml64` and `link` rather than
+`c++`, so shc there needs the Visual Studio environment at run time too.
 
 A case is `tests/cases/<name>.shm` beside `tests/cases/<name>.expected`. The
 expected file is what the app's interpreter printed, recorded by

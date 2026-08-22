@@ -120,9 +120,31 @@ int Driver::shell(const std::string &command) {
     return std::system(command.c_str());
 }
 
+// Paths reach the assembler and the linker through a shell, and a Windows path
+// has spaces in it far more often than a Unix one does - "Program Files" is the
+// obvious case and a user's own directory is the common one.
+//
+// Named shellQuote, not quoted: <iomanip> is reachable from here and std::quoted
+// exists, so an unqualified call to `quoted` on a std::string finds it by
+// argument-dependent lookup and hands back a stream proxy. The error that
+// follows is about __quoted_proxy and says nothing about the collision.
+// Compiler-C's driver calls its own the same thing, for the same reason.
+static std::string shellQuote(const std::string &path) {
+    return "\"" + path + "\"";
+}
+
+// The archive, by the name that platform's librarian makes. .a is what ar
+// writes and .lib is what lib.exe writes, and they are not interchangeable -
+// naming the wrong one gets "cannot open input file", which reads as a missing
+// runtime rather than as a runtime under its other name.
 std::string Driver::defaultRuntimeObject(const std::string &targetName) const {
+#ifdef _WIN32
+    const char *extension = ".lib";
+#else
+    const char *extension = ".a";
+#endif
     return directoryOf(program_) + "/lib/shmrt-" + targetName +
-           (debug_ ? "-debug" : "") + ".a";
+           (debug_ ? "-debug" : "") + extension;
 }
 
 bool Driver::parseArguments(const std::vector<std::string> &arguments) {
@@ -313,7 +335,16 @@ int Driver::run(const std::vector<std::string> &arguments) {
     // with a name it is the object's, and without one the object is the
     // input's name with .o, which is what cc -c does.
     const bool named = !output_.empty();
-    if (output_.empty()) output_ = stem(input_);
+    if (output_.empty()) {
+        output_ = stem(input_);
+        // A program with no extension is not something cmd will run, so the
+        // default name gets one - the same rule cc1 keeps, where a.out is
+        // a.exe on a Windows host. A name given with -o is taken as given,
+        // also as cc1 does: whoever wrote it knows what they meant.
+#ifdef _WIN32
+        if (!assemblyOnly_ && !objectOnly_) output_ += ".exe";
+#endif
+    }
 
     const std::string assemblyPath =
         assemblyOnly_ ? output_ : output_ + target->assemblyExtension();
@@ -335,15 +366,67 @@ int Driver::run(const std::vector<std::string> &arguments) {
     // to have ".o" put on the end of it whatever it was, so `shc f.shm -c -o
     // f.o` wrote f.o.o - which is a nuisance by hand and fatal to anything
     // that has to name the object again to link it.
+#ifdef _WIN32
+    // A Windows host has no 'c++' to hand either job to, so the two tools are
+    // named: ml64 assembles the MASM this compiler writes and link produces the
+    // program. Both ship with Visual Studio and reach PATH only after
+    // vcvars64.bat has run - which is why a failure here says so rather than
+    // leaving "'ml64' is not recognized" to be read as a broken compiler.
+    //
+    // This is the same pair, in the same order, that Compiler-C's driver names
+    // on this host, and the same one tests/remote-windows.sh has been running
+    // by hand in build.bat since before shc could be built here at all.
+    const std::string objectPath =
+        objectOnly_ ? (named ? output_ : output_ + ".obj") : output_ + ".obj";
+
+    std::string command = "ml64 /nologo /c /Fo" + shellQuote(objectPath) + " " +
+                          shellQuote(assemblyPath);
+    int status = shell(command);
+    if (status != 0) {
+        std::cerr << "shc: the assembler failed - the command was:\n  " << command << "\n";
+        noteWindowsToolchain();
+        std::remove(assemblyPath.c_str());
+        return 2;
+    }
+    std::remove(assemblyPath.c_str());
+    if (objectOnly_) return 0;
+
+    command = "link /nologo /subsystem:console /out:" + shellQuote(output_) + " " +
+              shellQuote(objectPath) + " " + shellQuote(runtimeObject_);
+    status = shell(command);
+    // The object is this driver's own working file when a program was asked
+    // for, and goes with the assembly - only -c leaves one behind, because
+    // only -c was asked for one.
+    std::remove(objectPath.c_str());
+    if (status != 0) {
+        std::cerr << "shc: the linker failed - the command was:\n  " << command << "\n";
+        noteWindowsToolchain();
+        return 2;
+    }
+    return 0;
+#else
     std::string command;
     if (objectOnly_)
-        command = "c++ -c -o " + (named ? output_ : output_ + ".o") + " " + assemblyPath;
+        command = "c++ -c -o " + shellQuote(named ? output_ : output_ + ".o") + " " +
+                  shellQuote(assemblyPath);
     else
-        command = "c++ -o " + output_ + " " + assemblyPath + " " + runtimeObject_;
+        command = "c++ -o " + shellQuote(output_) + " " + shellQuote(assemblyPath) + " " +
+                  shellQuote(runtimeObject_);
 
     const int status = shell(command);
     std::remove(assemblyPath.c_str());
     return status == 0 ? 0 : 2;
+#endif
+}
+
+// Said once, where it is useful, rather than left for somebody to work out
+// from "'ml64' is not recognized as an internal or external command".
+void Driver::noteWindowsToolchain() {
+#ifdef _WIN32
+    std::cerr <<
+        "shc: ml64 and link ship with Visual Studio and are on PATH only inside\n"
+        "     a Developer Command Prompt, or after vcvars64.bat has been run.\n";
+#endif
 }
 
 }  // namespace shalimar

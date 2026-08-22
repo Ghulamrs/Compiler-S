@@ -36,6 +36,10 @@ private:
     void usage() const;
 
     std::string defaultRuntimeObject(const std::string &targetName) const;
+    // What to say when the assembler or the linker could not be run at all,
+    // which on this host is nearly always the environment rather than the
+    // tools being absent. Does nothing anywhere else.
+    static void noteWindowsToolchain();
     static std::string stem(const std::string &path);
     // The file's own name, without the directories in front of it.
     static std::string leafOf(const std::string &path);

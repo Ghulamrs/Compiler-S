@@ -148,6 +148,7 @@ committed, so neither of the other machines needs Swift or the app.
 ./tests/run.sh              the host suite: tests/cases and tests/load
 ./tests/remote-linux.sh     build with real g++ and run the suite on the box
 ./tests/remote-windows.sh   assemble with ml64 and run on the Windows box
+./tests/build-windows.sh    build shc itself there, with cl
 ./tests/record.sh           re-record expected output from the interpreter
 ./tests/cross.sh            finding the rest of the program in the other files
 ./tests/debug.sh            stopping and stepping a program from inside itself
@@ -156,8 +157,10 @@ committed, so neither of the other machines needs Swift or the app.
 ```
 
 The standing result, all three green: **74 cases plus 11 cross-file, 19
-debugging and 12 linking ones on the host and on Linux, 42 on Windows** - the other 32 are diagnostics, which the compiler produces on
-whichever machine it runs on and the Windows box therefore never sees.
+debugging and 12 linking ones on the host and on Linux, 42 on Windows** - the
+other 32 are diagnostics, which the compiler produces on whichever machine it
+runs on and the Windows box therefore never sees. `build-windows.sh examples`
+compiles and runs all twelve examples there with the natively built `shc.exe`.
 
 `tests/remote-linux.sh` is not only a second target. It is the only thing
 that can say whether the sources are ISO C++14: Apple's libc++ hands you
@@ -174,11 +177,26 @@ passes the host suite, and is refused only when it reaches real g++.
 
 The Windows shell is PowerShell, `git` is not on its `PATH`, and nested
 quotes mangle: the far side runs a `.bat` under `cmd`, which is the only
-shape that has never surprised. Its runtime is built there by `cl` and kept
-in `C:\shalimar\runtime`; `tests/remote-windows.sh` rebuilds it every time,
-because a suite that silently tested the previous runtime against this
-compiler's calls would fail as a link error if you were lucky and as a wrong
-answer if you were not.
+shape that has never surprised.
+
+**`shc` runs there natively as of 2026-08-22.** `build.bat` builds it with
+`cl` and `tests/build-windows.sh` relays the tree and runs that — twenty
+translation units, two archives and one link. Its driver names `ml64` and
+`link` on that host where it names `c++` on the other two, so it needs the
+Visual Studio environment at *run* time as well as at build time.
+
+That does **not** replace `tests/remote-windows.sh`, which keeps the compiler
+here and sends only assembly. Nothing on the far side reads the tree there, so
+a case can only pass if what `ml64` was handed was correct — which is the
+honest test of the MASM backend and is a different question. Its runtime lives
+in `C:\shalimar\runtime` and is rebuilt every run, because a suite that
+silently tested the previous runtime against this compiler's calls would fail
+as a link error if you were lucky and as a wrong answer if you were not.
+`build.bat` keeps its own in `lib\`, beside the compiler, where the driver
+looks.
+
+`cl` is also the third of the three toolchains this project claims to be ISO
+C++14 under, and until `build.bat` existed nothing was checking it.
 
 ## Known limitations
 
