@@ -33,6 +33,10 @@
   <PropertyGroup>
     <TargetName>shc</TargetName>
   </PropertyGroup>
+  <!-- OutDir is left to the C++ default on purpose: this project's
+       own x64\$(Configuration)\ when built alone, and the solution's
+       output directory when built from one - which is what puts the
+       editor and the compilers it drives in one place. -->
   <ItemDefinitionGroup>
     <ClCompile>
       <LanguageStandard>stdcpp14</LanguageStandard>
@@ -45,6 +49,20 @@
     <Link>
       <SubSystem>Console</SubSystem>
     </Link>
+    <PostBuildEvent>
+      <Message>building the Shalimar runtime beside shc.exe</Message>
+      <Command>if not exist "$(OutDir)lib" mkdir "$(OutDir)lib"
+if not exist "$(IntDir)rt" mkdir "$(IntDir)rt"
+if not exist "$(IntDir)rtd" mkdir "$(IntDir)rtd"
+cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /O2 /D_CRT_SECURE_NO_WARNINGS /Fo"$(IntDir)rt\\" /c "$(ProjectDir)runtime\Shortest.cpp" "$(ProjectDir)runtime\Failure.cpp" "$(ProjectDir)runtime\Numbers.cpp" "$(ProjectDir)runtime\Array.cpp" "$(ProjectDir)runtime\Console.cpp" "$(ProjectDir)runtime\Runtime.cpp"
+if errorlevel 1 exit /b 1
+lib /nologo /out:"$(OutDir)lib\shmrt-x86_64-windows.lib" "$(IntDir)rt\Shortest.obj" "$(IntDir)rt\Failure.obj" "$(IntDir)rt\Numbers.obj" "$(IntDir)rt\Array.obj" "$(IntDir)rt\Console.obj" "$(IntDir)rt\Runtime.obj"
+if errorlevel 1 exit /b 1
+cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /O2 /D_CRT_SECURE_NO_WARNINGS /DSHM_DEBUG=1 /Fo"$(IntDir)rtd\\" /c "$(ProjectDir)runtime\Shortest.cpp" "$(ProjectDir)runtime\Failure.cpp" "$(ProjectDir)runtime\Numbers.cpp" "$(ProjectDir)runtime\Array.cpp" "$(ProjectDir)runtime\Console.cpp" "$(ProjectDir)runtime\Runtime.cpp" "$(ProjectDir)runtime\Debug.cpp"
+if errorlevel 1 exit /b 1
+lib /nologo /out:"$(OutDir)lib\shmrt-x86_64-windows-debug.lib" "$(IntDir)rtd\Shortest.obj" "$(IntDir)rtd\Failure.obj" "$(IntDir)rtd\Numbers.obj" "$(IntDir)rtd\Array.obj" "$(IntDir)rtd\Console.obj" "$(IntDir)rtd\Runtime.obj" "$(IntDir)rtd\Debug.obj"
+if errorlevel 1 exit /b 1</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="runtime\Shortest.cpp" />
