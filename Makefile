@@ -67,15 +67,30 @@ OBJECTS := $(patsubst %.cpp,$(BUILD)/%.o,$(SOURCES))
 RUNTIME_OBJECTS := $(patsubst %.cpp,$(BUILD)/%.o,$(RUNTIME_SOURCES))
 DEBUG_RUNTIME_OBJECTS := $(patsubst %.cpp,$(BUILD)/debug/%.o,$(DEBUG_RUNTIME_SOURCES))
 DEPENDS := $(OBJECTS:.o=.d) $(RUNTIME_OBJECTS:.o=.d) $(DEBUG_RUNTIME_OBJECTS:.o=.d)
-RUNTIME := lib/shmrt-$(TARGET).a
-DEBUG_RUNTIME := lib/shmrt-$(TARGET)-debug.a
+# Where the finished program goes. `.` is this directory, which is what every
+# suite and script here already expects, so a plain `make` is unchanged. The
+# workspace build names one directory instead, and all three programs are
+# built into it rather than collected afterwards.
+BINDIR ?= .
+SHC    := $(BINDIR)/shc.exe
 
-all: shc.exe $(RUNTIME) $(DEBUG_RUNTIME)
+# **The runtime goes wherever the compiler goes, and that is not a preference.**
+# shc finds its runtime relative to its own binary - lib/ beside it, then
+# ../lib - so a shc.exe that arrives somewhere without its archives compiles,
+# writes correct assembly, and then dies at the link naming a .a that is not
+# there. Deriving both from BINDIR is what makes that impossible to get wrong;
+# a copy rule written separately is what got it wrong before.
+LIBDIR := $(BINDIR)/lib
+RUNTIME := $(LIBDIR)/shmrt-$(TARGET).a
+DEBUG_RUNTIME := $(LIBDIR)/shmrt-$(TARGET)-debug.a
+
+all: $(SHC) $(RUNTIME) $(DEBUG_RUNTIME)
 
 # shc.exe on every machine, not only Windows. The three programs in this family
 # - RStudio, cc1 and shc - carry one name each wherever they are, and a suffix
 # that changes by platform is one more thing every script has to know.
-shc.exe: $(OBJECTS)
+$(SHC): $(OBJECTS)
+	@mkdir -p $(BINDIR)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJECTS)
 
 $(BUILD)/%.o: %.cpp
@@ -85,7 +100,7 @@ $(BUILD)/%.o: %.cpp
 -include $(DEPENDS)
 
 $(RUNTIME): $(RUNTIME_OBJECTS)
-	@mkdir -p lib
+	@mkdir -p $(LIBDIR)
 	$(AR) rcs $@ $(RUNTIME_OBJECTS)
 
 $(BUILD)/debug/%.o: %.cpp
@@ -93,13 +108,13 @@ $(BUILD)/debug/%.o: %.cpp
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -DSHM_DEBUG=1 -c -o $@ $<
 
 $(DEBUG_RUNTIME): $(DEBUG_RUNTIME_OBJECTS)
-	@mkdir -p lib
+	@mkdir -p $(LIBDIR)
 	$(AR) rcs $@ $(DEBUG_RUNTIME_OBJECTS)
 
 test: all
 	./tests/run.sh
 
 clean:
-	rm -rf $(BUILD) shc.exe lib
+	rm -rf $(BUILD) $(SHC) $(LIBDIR)
 
 .PHONY: all test clean
