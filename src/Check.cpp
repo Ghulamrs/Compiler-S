@@ -601,8 +601,24 @@ void Checker::visit(Assign &node) {
     Index *element = dynamic_cast<Index *>(node.target().get());
     if (element) {
         const Type *target = typeOf(node.target());
+        if (!target) return;
+
+        // The literal is looked for before the expression is typed, and the
+        // order is the whole of it. typeOf on {7, 2.5} types the literal by
+        // its own contents - int[], the 2.5 truncated to fit - and coercing
+        // that to a real row afterwards only widens the 2 back to 2.0. The
+        // whole-variable path below has always tested for a literal first for
+        // this reason; doing it second here cost a 2.5 and one test.
+        if (target->isArray()) {
+            if (ArrayLit *literal = dynamic_cast<ArrayLit *>(node.expr().get())) {
+                coerceLiteral(*literal, target);
+            }
+            return;
+        }
+
         const Type *value = typeOf(node.expr());
-        if (target && value && !target->isArray()) coerce(node.expr(), target);
+        if (!value) return;
+        coerce(node.expr(), target);
         return;
     }
 
@@ -697,6 +713,25 @@ void Checker::visit(MultiAssign &node) {
             Symbol *created = declareName(node.names()[i], outputs[i]);
             if (!inGlobalScope_) scope_.define(node.names()[i], created);
             target = created;
+        } else if (target->type() != outputs[i]) {
+            // An existing target of another type. 5.2 makes the conversion
+            // automatic and silent at a declared destination, and an existing
+            // variable is one - the generator does it, having the output's
+            // kind and the target's both to hand.
+            //
+            // What it cannot do is turn an array into a number or the other
+            // way about, and letting that through is how this used to store a
+            // double's bits into an int slot and call it an answer. Refused
+            // here so that the generator may go on assuming the two are
+            // convertible.
+            const bool convertible = !target->type()->isArray() && !outputs[i]->isArray();
+            if (!convertible) {
+                diag_.error(unit_, line_, "'" + node.names()[i] + "' is " +
+                                       target->type()->spelling() + ", and '" + call.callee() +
+                                       "' gives " + outputs[i]->spelling() +
+                                       " - which do not convert");
+                return;
+            }
         }
         node.targets().push_back(target);
     }

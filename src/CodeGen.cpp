@@ -381,11 +381,12 @@ void CodeGen::visit(Precision &node) {
     emitter_.call("shm_print_places");
 }
 
-void CodeGen::visit(Convert &node) {
-    evaluate(node.expr());
-    const Type *from = node.expr().type();
-    const Type *to = node.type();
-    if (!from || from == to) return;
+// Whatever is in the accumulator, as a `to` instead of a `from`. Written apart
+// from visit(Convert) because a multi-assign has a value to convert and no
+// expression to hang a ConvertNode on - the value arrives from a call's output
+// slot, which the checker never saw as a tree.
+void CodeGen::convertAccumulator(const Type *from, const Type *to) {
+    if (!from || !to || from == to) return;
     passAccumulator(from, 0);
 
     // A char is held in an int register, so widening out of one is free and
@@ -399,6 +400,11 @@ void CodeGen::visit(Convert &node) {
     } else if (to == Type::charType()) {
         emitter_.call(from == Type::realType() ? "shm_real_to_char" : "shm_int_to_char");
     }
+}
+
+void CodeGen::visit(Convert &node) {
+    evaluate(node.expr());
+    convertAccumulator(node.expr().type(), node.type());
 }
 
 // Left into a slot, right into the accumulator, then the runtime is asked
@@ -528,10 +534,45 @@ void CodeGen::generateCall(Call &node) {
     for (int i = 0; i < overflowCount; ++i) release();
 
     // Copy-back, to the variable or the element the argument named.
+    //
+    // The element half is why this is not one line. 8.2 admits an element -
+    // "bump(v[1]) writes back to v[1]" - and Index::isAddressable says so, so
+    // the checker lets one through. This used to static_cast every argument to
+    // Var& and store through whatever pointer sat where a Var keeps its
+    // symbol: a wild write for exactly the call the document uses as its
+    // example. Nothing caught it because tests/cases/functions.shm only ever
+    // passes a plain variable.
     for (size_t i = 0; i < count; ++i) {
         if (referenceSlots[i] < 0) continue;
-        emitter_.loadSlot(slotKind(proto.inputs[i].type), referenceSlots[i]);
-        Var &target = static_cast<Var &>(*node.arguments()[i]);
+        const Type *type = proto.inputs[i].type;
+        Expr &argument = *node.arguments()[i];
+
+        if (Index *element = dynamic_cast<Index *>(&argument)) {
+            // The base and the index are worked out again here rather than
+            // kept from the call. They were pure in every case the language
+            // can express as an index - a variable, a literal, arithmetic on
+            // them - and holding two more slots across the call to avoid
+            // re-reading them would cost every call to pay for none of them.
+            const int container = reserve();
+            const int index = reserve();
+
+            evaluate(element->base());
+            emitter_.storeSlot(Slot::Wide, container);
+            evaluate(element->index());
+            emitter_.storeSlot(Slot::Int, index);
+
+            emitter_.loadSlotIntoArg(slotKind(type), referenceSlots[i], 2);
+            emitter_.loadSlotIntoArg(Slot::Int, index, 1);
+            emitter_.loadSlotIntoArg(Slot::Wide, container, 0);
+            emitter_.call(setterFor(type));
+
+            release();
+            release();
+            continue;
+        }
+
+        emitter_.loadSlot(slotKind(type), referenceSlots[i]);
+        Var &target = static_cast<Var &>(argument);
         writeSymbol(*target.symbol());
     }
 }
@@ -604,21 +645,39 @@ void CodeGen::visit(Return &node) {
     emitter_.jump(exitLabel_);
 }
 
+// The output types are the call's, and the targets' are the targets'. They are
+// the same thing when a target was created here - 7.3 makes a new one with the
+// declared output type - and need not be when the target already existed:
+// 5.2 says a conversion at a declared destination is automatic and silent, and
+// an existing variable is a declared destination.
+//
+// It used to load each value with the *target's* kind, which is not a
+// conversion but a reinterpretation: the callee stored a double and an int
+// slot read its bits back as an integer. Garbage, silently, from a program the
+// document allows.
 void CodeGen::visit(MultiAssign &node) {
     Call &call = static_cast<Call &>(*node.call());
+
     if (call.builtin() >= 0) {
         generateBuiltin(call);
+        convertAccumulator(call.type(), node.targets()[0]->type());
         writeSymbol(*node.targets()[0]);
         return;
     }
+
+    const Prototype &proto = *call.prototype();
     generateCall(call);
-    if (!call.prototype()->returnsByPointer()) {
+    if (!proto.returnsByPointer()) {
+        convertAccumulator(proto.outputs.empty() ? call.type() : proto.outputs[0],
+                           node.targets()[0]->type());
         writeSymbol(*node.targets()[0]);
         return;
     }
+
     for (size_t i = 0; i < node.targets().size(); ++i) {
-        emitter_.loadSlot(slotKind(node.targets()[i]->type()),
-                          call.scratchBase() + static_cast<int>(i));
+        const Type *output = proto.outputs[i];
+        emitter_.loadSlot(slotKind(output), call.scratchBase() + static_cast<int>(i));
+        convertAccumulator(output, node.targets()[i]->type());
         writeSymbol(*node.targets()[i]);
     }
 }

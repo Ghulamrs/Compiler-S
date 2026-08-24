@@ -42,6 +42,45 @@ be allowed to overwrite.
 The same rule reaches `u : s + " there"` and `s : "hello"`, but those cannot
 show the difference: a join and a literal are both fresh arrays already.
 
+### A multi-assign converts at an existing target; the interpreter refuses
+
+§5.2:
+
+> `real` → `int` is **automatic at a declared destination and silent**
+
+§7.3 says only that *"targets that do not exist are created with the declared
+output types"*, and is silent about ones that do. A variable already declared
+is a declared destination, so §5.2 governs and the conversion is automatic.
+
+```
+fun <real> = half(n: int) { return n / 2. }
+
+fun <> = main() {
+  int b : 0
+  <b> : half(9)
+  ? b                 // the document: 4.  The interpreter: a check error
+}
+```
+
+The interpreter reports `'b' is int, not real` and stops. `shc` narrows
+silently and prints `4`.
+
+**The interpreter disagrees with itself here, which is what settles it.** The
+same operation written as an ordinary assignment - `b : sqrt(16.)` with `b`
+declared `int` - narrows silently in the interpreter and prints `4`, matching
+the document and this compiler. Only the multi-assign spelling is refused,
+and nothing in the document distinguishes the two.
+
+`tests/cases/multi_convert.expected` is therefore hand-written to what the
+document requires, not recorded from the oracle. Re-running `tests/record.sh`
+over it would replace it with three check errors.
+
+Found by a conformance review on 2026-08-24, together with the defect that hid
+it: `shc` used to load each returned value with the *target's* kind rather
+than the output's, so the value was reinterpreted rather than converted and
+the answer was garbage either way. That is fixed; this entry is about what it
+was fixed *to*.
+
 ---
 
 ## 2. The document quotes an approximation of a message

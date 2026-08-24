@@ -139,6 +139,7 @@ private:
     void makeArray(const Type *type, std::vector<ExprPtr> &extents, int extentBase);
 
     // 'A[i] : v' - the base and the index are computed, then the value.
+    void convertAccumulator(const Type *from, const Type *to);
     void assignElement(Index &target, Expr &value);
     void generateBuiltin(Call &node);
 

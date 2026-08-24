@@ -1,0 +1,33 @@
+// 8.2: a reference argument may be an element, and the copy-back writes to
+// that element. The document's own example is bump(v[1]).
+fun <> = bump(&n: int) {
+  n +: 10
+}
+
+fun <> = swapUp(&a: real) {
+  a : a * 2.
+}
+
+fun <> = main() {
+  int v[3]
+  v[0] : 1
+  v[1] : 5
+  v[2] : 9
+  bump(v[1])
+  ? v[0] v[1] v[2]
+
+  // The neighbours are untouched, and a second element works too.
+  bump(v[2])
+  ? v[0] v[1] v[2]
+
+  // A real element, so the copy-back has to pick the right setter.
+  real r[2]
+  r[1] : 3.5
+  swapUp(r[1])
+  ? r[0] r[1]
+
+  // An index that is a variable rather than a literal.
+  int k : 0
+  bump(v[k])
+  ? v[0] v[1] v[2]
+}
