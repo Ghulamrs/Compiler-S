@@ -1,0 +1,13 @@
+// 6: a global is visible below the line that declares it, and the checker
+// refuses a read from above. The one case left to the run is a global whose
+// own initializer calls a function that reads a global not yet made.
+int base : 10
+int derived : twice()
+
+fun <int> = twice() { return base * 2 }
+
+fun <> = main() {
+  // The legal shape first: derived's initializer reads base, which exists.
+  ? base derived
+  ? twice()
+}

@@ -1,0 +1,11 @@
+// 7.8: prec(n) is a print-list directive, not a value. It prints nothing and
+// its argument is evaluated once, like any other.
+int g : 0
+fun <int> = places() {
+  g +: 1
+  return 3
+}
+fun <> = main() {
+  ? prec(places()) g
+  ? 1.23456789
+}

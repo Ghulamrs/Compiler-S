@@ -173,4 +173,18 @@ bool Resolver::resolve(Unit &main, std::vector<Unit> &others) {
     return !clashed;
 }
 
+std::vector<std::string> calledNamesIn(Stmt &statement) {
+    Names calls;
+    calls.callsOnly = true;
+    statement.accept(calls);
+    return calls.found;
+}
+
+std::vector<std::string> calledNamesIn(Function &function) {
+    Names calls;
+    calls.callsOnly = true;
+    calls.walk(function.body());
+    return calls.found;
+}
+
 }  // namespace shalimar

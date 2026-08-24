@@ -1,5 +1,7 @@
 #include "CodeGen.h"
 
+#include "Resolve.h"
+
 #include "Builtin.h"
 #include "backend/Emitter.h"
 
@@ -42,6 +44,8 @@ void CodeGen::run(Program &program, const std::string &sourceName,
     named.insert(0);
     generateFileNames(named);
 
+    reachableFromGlobals(program);
+
     Function &initializer = program.initializer();
     initializer.body().clear();
     for (StmtPtr &declaration : program.globals()) {
@@ -68,7 +72,40 @@ void CodeGen::generateFileNames(const std::set<int> &units) {
     emitter_.endFunction(0);
 }
 
+// Seeds are what the globals' own initializers call; edges are what those
+// functions call in turn. Anything in the closure can run while the globals
+// are still being made, so a global read inside one has to ask whether the
+// box exists yet. Nothing else can: by the time any other function runs,
+// shm_init_globals has returned.
+//
+// Usually empty. A global initialized by a literal calls nothing, so the
+// ordinary program compiles to exactly what it did before this existed.
+void CodeGen::reachableFromGlobals(Program &program) {
+    initializerCanReach_.clear();
+
+    std::vector<std::string> wanted;
+    for (StmtPtr &g : program.globals()) {
+        if (!g) continue;
+        for (const std::string &name : calledNamesIn(*g)) wanted.push_back(name);
+    }
+
+    while (!wanted.empty()) {
+        const std::string name = wanted.back();
+        wanted.pop_back();
+        if (!initializerCanReach_.insert(name).second) continue;   // already followed
+        for (std::unique_ptr<Function> &f : program.functions()) {
+            if (f->proto().name != name) continue;
+            for (const std::string &next : calledNamesIn(*f)) wanted.push_back(next);
+        }
+    }
+}
+
 void CodeGen::generate(Function &function) {
+    // The initializer is where the globals are made, so a read inside it is
+    // the plainest form of the cycle; the rest is the closure worked out above.
+    checkGlobalReads_ = function.proto().name.empty() ||
+                        initializerCanReach_.count(function.proto().name) > 0;
+
     const Prototype &proto = function.proto();
     evaluationBase_ = function.frame().evaluationBase();
     depth_ = 0;
@@ -276,6 +313,11 @@ void CodeGen::visit(RealLit &node) {
     emitter_.loadRealConstant(node.value());
 }
 
+// A plain load, and it has to stay one. Three of its four callers sit between
+// a loadSlotIntoArg and a setArg - the array-fill and string-append plumbing -
+// where emitting a call would clobber the argument already in place. That cost
+// a segfault on a program that was perfectly legal, so the existence check
+// lives in visit(Var) below, which is where a *program* reads a global.
 void CodeGen::readSymbol(const Symbol &symbol) {
     if (symbol.isGlobal()) emitter_.loadGlobal(slotKind(symbol.type()), symbol.slot());
     else if (symbol.isReference()) emitter_.loadThroughPointer(slotKind(symbol.type()), symbol.slot());
@@ -292,6 +334,20 @@ void CodeGen::visit(Var &node) {
     if (node.isNamedConstant()) {
         emitter_.loadRealConstant(node.constant());
         return;
+    }
+    // Does this box exist yet? Only asked inside what a global's initializer
+    // can reach - see reachableFromGlobals - and only here, where a program
+    // reads a global rather than where the generator does. The name travels so
+    // the message can be the app's, "Undefined variable 'a'", and not a slot
+    // number nobody wrote.
+    if (checkGlobalReads_ && node.symbol()->isGlobal()) {
+        const int id = newBytesId();
+        emitter_.defineBytes(id, node.symbol()->name() + std::string(1, '\0'));
+        emitter_.loadBytesAddress(id);
+        emitter_.setArg(Slot::Wide, 1);
+        emitter_.loadIntConstant(node.symbol()->slot());
+        emitter_.setArg(Slot::Int, 0);
+        emitter_.call("shm_globals_ready");
     }
     readSymbol(*node.symbol());
 }
@@ -701,10 +757,24 @@ void CodeGen::makeArray(const Type *type, std::vector<ExprPtr> &extents, int ext
     emitter_.call("shm_array_make");
 }
 
+// The box exists from here on, so a read of it from anything the rest of the
+// initializers reach will find it. Said as each global is made rather than
+// once at the end, because the whole point is the half-built state in
+// between: globals below the mark exist and the ones at or above it do not.
+void CodeGen::markGlobalMade(const Symbol &symbol) {
+    if (!symbol.isGlobal()) return;
+    emitter_.loadIntConstant(symbol.slot() + 1);
+    emitter_.setArg(Slot::Int, 0);
+    emitter_.call("shm_globals_made");
+}
+
 void CodeGen::visit(Declare &node) {
     if (node.declaredType()->isArray()) {
         makeArray(node.declaredType(), node.extents(), node.extentBase());
         writeSymbol(*node.symbol());
+        // Before the initializer runs, and before the readSymbol below, which
+        // would otherwise ask whether the array exists while making it.
+        markGlobalMade(*node.symbol());
         if (!node.initial()) return;
 
         // An initializer shorter than the array fills what it covers and
@@ -729,6 +799,7 @@ void CodeGen::visit(Declare &node) {
         evaluate(*node.initial());
     }
     writeSymbol(*node.symbol());
+    markGlobalMade(*node.symbol());
 }
 
 // 'A[i] : v'. The container and the index are computed first and parked,
@@ -876,10 +947,12 @@ void CodeGen::visit(CompoundAssign &node) {
 void CodeGen::visit(Print &node) {
     for (ExprPtr &item : node.items()) {
         evaluate(*item);
-        if (dynamic_cast<Precision *>(item.get())) {
-            evaluate(*item);          // a directive: it prints nothing itself
-            continue;
-        }
+        // A directive rather than a value: visit(Precision) has just emitted
+        // the argument and the call to shm_print_places, so there is nothing
+        // left to print. It used to evaluate the item a second time here,
+        // which ran the argument twice - invisible for prec(7), a wrong answer
+        // for prec(f()) where f has an effect.
+        if (dynamic_cast<Precision *>(item.get())) continue;
         const Type *type = item->type();
         if (type && type->isArray()) {
             emitter_.setArg(Slot::Wide, 0);

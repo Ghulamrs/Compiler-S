@@ -1,0 +1,11 @@
+// The cycle 6 leaves to the run: a's initializer calls f, and f reads a,
+// which does not exist until that initializer has finished.
+int a : f()
+
+fun <int> = f() {
+  return a
+}
+
+fun <> = main() {
+  ? a
+}

@@ -80,4 +80,11 @@ std::vector<std::string> calledNames(Program &program);
 // what deciding whether it reads a global needs.
 std::vector<std::string> mentionedNames(Function &function);
 
+// What one statement calls, and what one function's body calls. Together they
+// are the two halves of "which functions can a global's initializer reach" -
+// the seeds and the edges - which is what decides where a global read has to
+// be checked at run time. See CodeGen::reachableFromGlobals.
+std::vector<std::string> calledNamesIn(Stmt &statement);
+std::vector<std::string> calledNamesIn(Function &function);
+
 }  // namespace shalimar

@@ -139,6 +139,15 @@ private:
     void makeArray(const Type *type, std::vector<ExprPtr> &extents, int extentBase);
 
     // 'A[i] : v' - the base and the index are computed, then the value.
+    // Which functions a global's initializer can reach, directly or through
+    // other functions. Only inside these does a global read need checking at
+    // run time: everywhere else initialization has finished by definition, so
+    // an ordinary program - where the set is empty - pays nothing.
+    void markGlobalMade(const Symbol &symbol);
+    void reachableFromGlobals(Program &program);
+    std::set<std::string> initializerCanReach_;
+    bool checkGlobalReads_ = false;
+
     void convertAccumulator(const Type *from, const Type *to);
     void assignElement(Index &target, Expr &value);
     void generateBuiltin(Call &node);

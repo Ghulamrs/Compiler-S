@@ -6,6 +6,7 @@
 #endif
 
 #include <cstdio>
+#include <string>
 #include <cstdlib>
 
 namespace shm {
@@ -63,6 +64,29 @@ extern "C" void shm_line(int32_t unit, int32_t line) {
 #ifdef SHM_DEBUG
     shm::Debug::shared().at(unit, line);
 #endif
+}
+
+// How far the globals have got. 6 makes a global visible only below the line
+// that declares it, and the checker enforces that - so the one case left to
+// the run is a global whose own initializer calls a function that reads a
+// global not yet made. The document calls it a cycle rather than an ordering
+// and asks for `Undefined variable` at run time.
+//
+// One integer, because the globals are created in file order and their slots
+// are numbered in that order too: everything below the mark exists, and
+// nothing at or above it does. shm_globals_ready is called only from code
+// that could be reached from an initializer - see CodeGen::reachableFromGlobals
+// - so an ordinary program pays nothing for this at all.
+static int32_t globalsMade = 0;
+
+extern "C" void shm_globals_made(int32_t upto) { globalsMade = upto; }
+
+extern "C" void shm_globals_ready(int32_t slot, const char *name) {
+    if (slot < globalsMade) return;
+    std::string said = "Undefined variable '";
+    said += name ? name : "";
+    said += "'";
+    shm::fail(said.c_str());
 }
 
 extern "C" void shm_name_file(int32_t unit, const char *name) {

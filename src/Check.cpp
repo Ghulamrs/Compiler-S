@@ -677,7 +677,15 @@ void Checker::visit(CompoundAssign &node) {
     if (isText(target)) {
         if (!node.isAdd()) {
             diag_.error(unit_, line_, "'-:' does not apply to strings");
+            return;
         }
+        // What is being appended has to be a string too. 10: "none of them
+        // mix a string with a number". The value's type was worked out four
+        // lines above and then never looked at, so s +: 5 reached the
+        // generator, which handed 5 to shm_text_concat as a pointer - a
+        // segfault where the app reports a check error. coerce says it in the
+        // app's own words, an array on either side never converting.
+        coerce(node.expr(), target);
         return;
     }
     if (target->isArray()) {
