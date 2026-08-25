@@ -615,15 +615,9 @@ void Checker::visit(Assign &node) {
                 return;
             }
 
-            // Not a literal, so the right side is an ordinary expression and
-            // has to be typed like one. Returning here without doing that
-            // left every Var in it unresolved, and the generator read
-            // symbol()->isGlobal() off a null pointer: 'm[1] : r' killed shc
-            // with SIGSEGV and no diagnostic, while 'A[0] : {1.,2.}' - the
-            // same replacement from a literal, and the example in the
-            // language document - was fine. Nothing was wrong with the
-            // generator, which has emitted shm_set_ref for an array element
-            // all along. It was never handed a typed expression to emit.
+            // A non-literal right side still has to be typed, or its names
+            // reach the generator unresolved - 'm[1] : r' read a null symbol
+            // and crashed, while the literal form was fine.
             const Type *value = typeOf(node.expr());
             if (!value) return;
             if (!value->isArray() || value->rank() != target->rank() ||
