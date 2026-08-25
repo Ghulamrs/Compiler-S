@@ -72,7 +72,7 @@ DEPENDS := $(OBJECTS:.o=.d) $(RUNTIME_OBJECTS:.o=.d) $(DEBUG_RUNTIME_OBJECTS:.o=
 # workspace build names one directory instead, and all three programs are
 # built into it rather than collected afterwards.
 BINDIR ?= .
-SHC    := $(BINDIR)/shc.exe
+SHC    ?= $(BINDIR)/shc.exe
 
 # **The runtime goes wherever the compiler goes, and that is not a preference.**
 # shc finds its runtime relative to its own binary - lib/ beside it, then
@@ -112,7 +112,7 @@ $(DEBUG_RUNTIME): $(DEBUG_RUNTIME_OBJECTS)
 	$(AR) rcs $@ $(DEBUG_RUNTIME_OBJECTS)
 
 test: all
-	./tests/run.sh
+	SHC="$(abspath $(SHC))" ./tests/run.sh
 
 clean:
 	rm -rf $(BUILD) $(SHC) $(LIBDIR)
