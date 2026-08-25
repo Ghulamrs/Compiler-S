@@ -1,0 +1,40 @@
+// Replacing a row of a rank-2 array.
+//
+// shc used to die with SIGSEGV and no diagnostic on the two shapes at
+// the bottom of this case. The checker typed the right-hand side only
+// when it was an array literal and returned without typing it
+// otherwise, so every name in it stayed unresolved and the generator
+// read a null symbol. Replacing a row from a LITERAL was fine, which is
+// the form SHALIMAR_LANGUAGE.md section 9 gives as its example - so the
+// documented spelling worked and the other two killed the compiler.
+//
+// Nothing was wrong with the generator: it has emitted shm_set_ref for
+// an array element all along, and was simply never handed a typed
+// expression to emit.
+fun <> = main() {
+  real A[2][5]
+  real m[2][3]
+  real r[3]
+  int i
+
+  // the documented form, from a literal
+  A[0] : {1.,2.}
+  ? A[0].row
+
+  for i : 0 to 2 {
+    r[i] : (i + 1) * 1.5
+  }
+
+  // from an array variable
+  m[1] : r
+  ? m[1][0] m[1][1] m[1][2]
+
+  // from another row
+  m[0] : m[1]
+  ? m[0][0] m[0][2]
+
+  // and the row still measures itself
+  ? m[0].row
+
+  return
+}
