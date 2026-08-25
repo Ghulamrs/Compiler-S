@@ -1,9 +1,4 @@
-// Arithmetic, conversions, loop control and the built-in functions.
-//
-// Every int operation is checked the same way: the arithmetic is done wide
-// and refused if the answer does not fit. Int32 in Int64 has room for any
-// sum, difference or product of two of them, so there is no case where the
-// check itself can overflow.
+
 #include "Internal.h"
 #include "Shortest.h"
 
@@ -26,9 +21,9 @@ int32_t narrow(int64_t wide, const char *op) {
     return static_cast<int32_t>(wide);
 }
 
-}  // namespace
+}
 
-}  // namespace shm
+}
 
 using shm::fail;
 using shm::Shortest;
@@ -49,9 +44,6 @@ int32_t shm_int_mod(int32_t a, int32_t b) {
     return shm::narrow(static_cast<int64_t>(a) % b, "%");
 }
 
-// Repeated multiplication rather than a call to pow(), so that every partial
-// product is checked and the answer is exact. A negative exponent has no int
-// to answer with, which is a refusal rather than a zero.
 int32_t shm_int_pow(int32_t a, int32_t b) {
     if (b < 0) fail("Negative power needs reals");
     int32_t result = 1;
@@ -92,9 +84,6 @@ int32_t shm_real_truth(double value) { return value != 0 ? 1 : 0; }
 
 double shm_int_to_real(int32_t value) { return static_cast<double>(value); }
 
-// The one narrowing the language performs silently, and it can still fail:
-// the fraction is dropped without a word, but a magnitude no int can hold is
-// refused rather than wrapped.
 int32_t shm_real_to_int(double value) {
     const double truncated = std::trunc(value);
     if (!(truncated >= -2147483648.0 && truncated <= 2147483647.0)) {
@@ -107,9 +96,6 @@ int32_t shm_real_to_int(double value) {
     return static_cast<int32_t>(truncated);
 }
 
-// A char is one byte, so a value outside 0..255 is an error rather than being
-// wrapped: a wrapped code point is a wrong character that looks like a right
-// one.
 int32_t shm_int_to_char(int32_t value) {
     if (value < 0 || value > 255) {
         char message[64];
@@ -143,9 +129,6 @@ int32_t shm_loop_int_run(int64_t value, int32_t end, int32_t step) {
 
 int64_t shm_loop_int_advance(int64_t value, int32_t step) { return value + step; }
 
-// A bound that arrives non-finite is an error naming which one and its value.
-// That matters because such bounds come out of ordinary arithmetic:
-// 'for i : 1. to sqrt(0.-1.)', 'to 1./0.', 'to pow(10.,400.)'.
 void shm_loop_real_check(double start, double end, double step) {
     static const char *roles[] = {"start", "end", "step"};
     const double values[] = {start, end, step};
@@ -188,8 +171,6 @@ double shm_fn_trunc(double x) { return std::trunc(x); }
 
 double shm_fn_abs_real(double x) { return std::fabs(x); }
 
-// abs() of the most negative int has no int to answer with, so it is the same
-// refusal as any other overflow rather than a value that wraps to itself.
 int32_t shm_fn_abs_int(int32_t x) { return shm::narrow(-static_cast<int64_t>(x) < 0
                                                        ? static_cast<int64_t>(x)
                                                        : -static_cast<int64_t>(x), "abs"); }
@@ -199,4 +180,4 @@ double  shm_fn_min_real(double a, double b) { return a < b ? a : b; }
 int32_t shm_fn_max_int(int32_t a, int32_t b) { return a > b ? a : b; }
 int32_t shm_fn_min_int(int32_t a, int32_t b) { return a < b ? a : b; }
 
-}  // extern "C"
+}

@@ -4,9 +4,7 @@ namespace shalimar {
 
 void X86_64WindowsEmitter::beginModule(const std::string &sourceName) {
     sourceName_ = sourceName;
-    // Nothing goes out here. The EXTRN list has to precede the code and is
-    // not complete until the code has been written, so the whole header is
-    // put in front in endModule().
+
 }
 
 void X86_64WindowsEmitter::beginFunction(const std::string &name) {
@@ -30,9 +28,6 @@ void X86_64WindowsEmitter::label(int id) {
     raw(labelName(id) + ":");
 }
 
-// MASM wants a segment of its own for this, and it has to be written
-// outside _TEXT - which is why the count is kept and the block emitted when
-// the module ends rather than where it was asked for.
 void X86_64WindowsEmitter::emitGlobalBlock(int slots) {
     globalSlots_ = slots;
 }
@@ -71,4 +66,4 @@ void X86_64WindowsEmitter::endModule() {
     raw("END");
 }
 
-}  // namespace shalimar
+}

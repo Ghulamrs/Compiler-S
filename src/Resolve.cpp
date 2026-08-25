@@ -8,10 +8,6 @@
 namespace shalimar {
 namespace {
 
-// Reads a tree and writes down the names in it. Two questions are asked of
-// the same walk - what is called, and what is mentioned at all - because the
-// second is how a brought-in function is known to want one of its own file's
-// globals.
 class Names : public NodeVisitor {
 public:
     bool callsOnly = false;
@@ -72,7 +68,7 @@ std::string globalName(StmtPtr &statement) {
     return declaration ? declaration->name() : std::string();
 }
 
-}  // namespace
+}
 
 std::vector<std::string> calledNames(Program &program) {
     Names names;
@@ -95,7 +91,6 @@ bool Resolver::resolve(Unit &main, std::vector<Unit> &others) {
     for (std::unique_ptr<Function> &f : main.program->functions())
         have.insert(f->proto().name);
 
-    // Everything the program asks for, then everything what arrives asks for.
     std::vector<std::string> wanted = calledNames(*main.program);
     std::set<size_t> reached;
     bool clashed = false;
@@ -105,16 +100,9 @@ bool Resolver::resolve(Unit &main, std::vector<Unit> &others) {
         wanted.pop_back();
 
         if (have.count(name) || findBuiltin(name) >= 0) continue;
-        // main() is never looked for. Nothing can call a function of that
-        // name but the program itself, and a directory of programs is the
-        // ordinary shape here - twelve of them ship with the app. Which is
-        // also why renaming one is what makes the rest of its file reachable.
+
         if (name == "main") continue;
 
-        // Which files answer to it. Asked only of a name something actually
-        // wants: two programs in one directory may each have a helper called
-        // rad() without either of them being wrong, and a compiler that
-        // refused the pair would refuse the directory the app ships.
         std::vector<size_t> answering;
         for (size_t u = 0; u < others.size(); ++u) {
             for (std::unique_ptr<Function> &f : others[u].program->functions()) {
@@ -122,18 +110,16 @@ bool Resolver::resolve(Unit &main, std::vector<Unit> &others) {
             }
         }
 
-        // Not here either. The checker reports it, with a line to stand on.
         if (answering.empty()) continue;
 
         if (answering.size() > 1) {
-            // Picking one would make the order the files happened to be read
-            // in into part of the language.
+
             std::string where = others[answering[0]].name;
             for (size_t i = 1; i < answering.size(); ++i)
                 where += (i + 1 == answering.size() ? " and " : ", ") + others[answering[i]].name;
             diag_.error(0, 0, "'" + name + "' is in " + where + " - it can be in one");
             clashed = true;
-            have.insert(name);   // said once, not once per call
+            have.insert(name);
             continue;
         }
 
@@ -150,9 +136,6 @@ bool Resolver::resolve(Unit &main, std::vector<Unit> &others) {
         have.insert(name);
         if (reached.insert(answering[0]).second) used_.push_back(from.name);
 
-        // Its own file's globals, and only the ones it reads. Whole files
-        // would drag in state nobody asked for and clash over names nobody
-        // wrote twice.
         std::vector<std::string> mentions = mentionedNames(*taken);
         for (StmtPtr &g : from.program->globals()) {
             if (!g) continue;
@@ -187,4 +170,4 @@ std::vector<std::string> calledNamesIn(Function &function) {
     return calls.found;
 }
 
-}  // namespace shalimar
+}

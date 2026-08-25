@@ -1,4 +1,4 @@
-// The shortest decimal spelling of a double. See Shortest.h.
+
 #include "Shortest.h"
 
 #include <cmath>
@@ -16,18 +16,11 @@ void Shortest::write(char *out, size_t size, double v) {
     const int count = shortestDigits(v, digits, exponent);
     const bool negative = std::signbit(v);
 
-    // `exponent` is the power of ten of the first digit plus one, so that the
-    // value is 0.d1d2... x 10^exponent. Positional layout is used while the
-    // point still falls inside or just after the digits, which is where the
-    // app's own conversion puts the boundary.
     char body[400];
     size_t at = 0;
     if (exponent > 16 || exponent < -3) {
         body[at++] = digits[0];
-        // A single digit takes no point at all in exponent form: the app
-        // prints 1e+16, not 1.0e+16. Positional form is the opposite way
-        // round and always keeps one, which is why the two are written out
-        // separately rather than sharing a tail.
+
         if (count > 1) {
             body[at++] = '.';
             for (int i = 1; i < count; ++i) body[at++] = digits[i];
@@ -53,15 +46,12 @@ void Shortest::write(char *out, size_t size, double v) {
         for (int i = exponent; i < count; ++i) body[at++] = digits[i];
         body[at] = '\0';
     }
-    if (exponent > 16 || exponent < -3) { /* snprintf terminated it */ }
+    if (exponent > 16 || exponent < -3) {  }
     else body[at] = '\0';
 
     std::snprintf(out, size, "%s%s", negative ? "-" : "", body);
 }
 
-// The fewest significant digits that read back as the same double. Asked for
-// one more each time rather than computed, because correctness here is what
-// matters and seventeen tries is not a cost anyone can measure.
 int Shortest::shortestDigits(double v, char *digits, int &exponent) {
     char buffer[64];
     for (int precision = 1; precision <= 17; ++precision) {
@@ -72,8 +62,6 @@ int Shortest::shortestDigits(double v, char *digits, int &exponent) {
     return unpack(buffer, digits, exponent);
 }
 
-// Takes '-1.2340e+05' apart into the digits '1234' and the exponent 6,
-// dropping the trailing zeros printf insisted on.
 int Shortest::unpack(const char *buffer, char *digits, int &exponent) {
     int count = 0;
     const char *p = buffer;
@@ -92,4 +80,4 @@ std::string Shortest::of(double v) {
     return text;
 }
 
-}  // namespace shm
+}

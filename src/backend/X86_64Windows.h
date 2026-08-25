@@ -1,11 +1,4 @@
-// x86-64, COFF, Microsoft x64, written for ml64.
-//
-// MASM differs from the GNU assembler in more than syntax: it wants every
-// symbol the module does not define declared with EXTRN before use, and a
-// procedure opened with PROC and closed with ENDP. The externals are
-// therefore not known until the last instruction has been emitted, so the
-// body is built in the base class's buffer and the header is put in front of
-// it in endModule().
+
 #pragma once
 
 #include "X86_64.h"
@@ -16,8 +9,6 @@ class X86_64WindowsEmitter : public X86_64Emitter {
 public:
     X86_64WindowsEmitter() : X86_64Emitter(spelling_impl_, microsoftAbi()) {}
 
-    // x64 COFF puts no underscore in front of a C symbol; only the 32-bit
-    // convention did.
     std::string symbol(const std::string &name) const override { return name; }
 
     void beginModule(const std::string &sourceName) override;
@@ -27,8 +18,7 @@ public:
     void label(int id) override;
 
 private:
-    // MASM has no temporary-symbol convention, so a label is an ordinary name
-    // and the generator's numbering is what keeps it unique.
+
     std::string labelName(int id) const override { return "Lshm" + std::to_string(id); }
     std::string bytesLabel(int id) const override { return "Lshmb" + std::to_string(id); }
     void openConstSection() override;
@@ -42,4 +32,4 @@ private:
     int globalSlots_ = 0;
 };
 
-}  // namespace shalimar
+}

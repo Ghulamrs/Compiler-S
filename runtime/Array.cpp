@@ -1,17 +1,4 @@
-// Arrays, and the text that is made of them.
-//
-// An array above rank one is an array of arrays rather than a block with
-// strides. That is not a representation preference: the language measures
-// dimensions rather than declaring them, so after 'real A[2][5]' and
-// 'A[0] : {1.,2.}' the answer to 'A[0].row' is 2. A row is a value that can
-// be replaced, so a row has to be a thing.
-//
-// Nothing is freed. A Shalimar program runs once and stops, the app's
-// interpreter has a garbage collector where this has none, and a scheme that
-// freed some of this would have to decide who owns a row that has been handed
-// to a function - which is a question the language does not otherwise ask.
-// The cost is a program that builds strings in a long loop; that is written
-// down in the README rather than left to be discovered.
+
 #include "Internal.h"
 
 #include <cstdio>
@@ -72,8 +59,6 @@ void bounds(const Array *array, int32_t index) {
     fail(message);
 }
 
-// Resets every element to the zero of its own type, in place and at any rank,
-// keeping the storage and the extents. Clearing is not retyping.
 void clear(Array *array) {
     if (array->element == KindRef) {
         for (int32_t i = 0; i < array->count; ++i) {
@@ -85,9 +70,6 @@ void clear(Array *array) {
                 static_cast<size_t>(array->count) * elementBytes(array->element));
 }
 
-// Copies as much of `source` as fits, leaving the rest of `destination` as it
-// was found - which the caller has already cleared. For a char array the last
-// slot is reserved for the terminator, so 'char s[4]' holds three characters.
 void fit(Array *destination, const Array *source) {
     if (!destination || !source) return;
     const bool text = destination->element == KindChar;
@@ -109,7 +91,7 @@ void fit(Array *destination, const Array *source) {
     }
 }
 
-}  // namespace
+}
 
 int32_t textLength(const Array *array) {
     if (!array || array->element != KindChar) return 0;
@@ -119,7 +101,7 @@ int32_t textLength(const Array *array) {
     return array->count;
 }
 
-}  // namespace shm
+}
 
 using namespace shm;
 
@@ -129,18 +111,12 @@ ShmArray *shm_array_make(int32_t element, int32_t rank, const int64_t *dims) {
     return reinterpret_cast<ShmArray *>(build(element, rank, dims));
 }
 
-// A string literal is the text plus a terminating char(0), so its capacity is
-// one more than its length.
 ShmArray *shm_array_from_text(const char *bytes, int32_t length) {
     Array *array = allocate(KindChar, length + 1);
     std::memcpy(array->chars(), bytes, static_cast<size_t>(length));
     return reinterpret_cast<ShmArray *>(array);
 }
 
-// Walks down 'axis' levels taking the first element at each, then counts. An
-// axis the array does not have answers -1 rather than failing, so asking a
-// vector for its columns is a legal question with a recognizable answer. A
-// scalar is a different mistake and never reaches here.
 int32_t shm_array_dim(const ShmArray *handle, int32_t axis) {
     const Array *array = reinterpret_cast<const Array *>(handle);
     if (axis < 0 || !array) return -1;
@@ -191,8 +167,6 @@ void shm_set_char(ShmArray *handle, int32_t index, int32_t value) {
     array->chars()[index] = static_cast<unsigned char>(value);
 }
 
-// Element assignment replaces the row. That is what makes an array's
-// dimensions measured rather than declared.
 void shm_set_ref(ShmArray *handle, int32_t index, ShmArray *value) {
     Array *array = reinterpret_cast<Array *>(handle);
     bounds(array, index);
@@ -203,10 +177,7 @@ void shm_array_fill(ShmArray *destination, const ShmArray *source) {
     Array *to = reinterpret_cast<Array *>(destination);
     const Array *from = reinterpret_cast<const Array *>(source);
     if (!to || !from) return;
-    // Cleared first, so the literal is the array's whole new value rather
-    // than a patch over the old one. Absence then means the same thing
-    // however it arises - a gap inside the literal, or a literal that stops
-    // short of the extents.
+
     clear(to);
     fit(to, from);
 }
@@ -222,9 +193,6 @@ ShmArray *shm_text_concat(const ShmArray *a, const ShmArray *b) {
     return reinterpret_cast<ShmArray *>(joined);
 }
 
-// Negative, zero or positive, like C - the compiler turns that into whichever
-// of the six answers the operator wanted. Ordering is by character code, so
-// every capital sorts before every lower-case letter.
 int32_t shm_text_compare(const ShmArray *a, const ShmArray *b) {
     const Array *left = reinterpret_cast<const Array *>(a);
     const Array *right = reinterpret_cast<const Array *>(b);
@@ -240,4 +208,4 @@ int32_t shm_text_compare(const ShmArray *a, const ShmArray *b) {
     return na < nb ? -1 : 1;
 }
 
-}  // extern "C"
+}

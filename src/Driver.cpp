@@ -64,9 +64,6 @@ std::string Driver::leafOf(const std::string &path) {
     return slash == std::string::npos ? path : path.substr(slash + 1);
 }
 
-// Both separators, deliberately. Being hosted on a platform is a separate
-// axis from targeting it, and a driver that knows only '/' is a bug that
-// cannot be reached from the machine it is usually written on.
 std::string Driver::directoryOf(const std::string &path) {
     size_t slash = path.find_last_of("/\\");
     return slash == std::string::npos ? std::string(".") : path.substr(0, slash);
@@ -97,9 +94,6 @@ bool Driver::looksLikeShalimar(const std::string &name) {
     return false;
 }
 
-// What 'the project' means to a compiler that was handed one file: the other
-// Shalimar files beside it. Sorted, so that two runs agree about everything
-// including which of two clashing files a diagnostic is reported against.
 std::vector<std::string> Driver::shalimarFilesIn(const std::string &directory) {
     std::vector<std::string> found;
 #ifdef _WIN32
@@ -128,42 +122,15 @@ int Driver::shell(const std::string &command) {
     return std::system(command.c_str());
 }
 
-// Paths reach the assembler and the linker through a shell, and a Windows path
-// has spaces in it far more often than a Unix one does - "Program Files" is the
-// obvious case and a user's own directory is the common one.
-//
-// Named shellQuote, not quoted: <iomanip> is reachable from here and std::quoted
-// exists, so an unqualified call to `quoted` on a std::string finds it by
-// argument-dependent lookup and hands back a stream proxy. The error that
-// follows is about __quoted_proxy and says nothing about the collision.
-// Compiler-C's driver calls its own the same thing, for the same reason.
 static std::string shellQuote(const std::string &path) {
     return "\"" + path + "\"";
 }
 
-// The archive, by the name that platform's librarian makes. .a is what ar
-// writes and .lib is what lib.exe writes, and they are not interchangeable -
-// naming the wrong one gets "cannot open input file", which reads as a missing
-// runtime rather than as a runtime under its other name.
-// Whether a path is there to be read. Small enough to sit here rather than in
-// a header of its own, and the only question asked of it.
 static bool exists(const std::string &path) {
     std::ifstream file(path.c_str());
     return file.good();
 }
 
-// Where this program actually is, asked of the machine rather than taken from
-// argv[0].
-//
-// argv[0] is not a path. Started through PATH - which is how an installed
-// compiler is always started - a program is handed a bare name, and the
-// directory of a bare name is ".", so the runtime was looked for in
-// ./lib/shmrt-*.a and a package could never have worked. Started through a
-// symbolic link it is handed the link, which is the other half of the same
-// problem.
-//
-// Three calls, one per platform, and every one of them is the documented way
-// to ask. The fallback is argv[0], for a platform none of these covers.
 static std::string programDirectory(const std::string &argv0) {
     std::string full;
 
@@ -173,7 +140,7 @@ static std::string programDirectory(const std::string &argv0) {
     if (wrote > 0 && wrote < sizeof buffer) full.assign(buffer, wrote);
 #elif defined(__APPLE__)
     uint32_t size = 0;
-    _NSGetExecutablePath(NULL, &size);          // asks how much room it needs
+    _NSGetExecutablePath(NULL, &size);
     std::vector<char> buffer(size + 1, '\0');
     if (size != 0 && _NSGetExecutablePath(&buffer[0], &size) == 0)
         full = &buffer[0];
@@ -186,13 +153,7 @@ static std::string programDirectory(const std::string &argv0) {
     if (full.empty()) full = argv0;
 
 #ifndef _WIN32
-    // Resolved, because what came back may be a symbolic link and the runtime
-    // is beside the *real* file. On a Mac _NSGetExecutablePath hands back the
-    // path the program was launched through, link and all - Apple's own
-    // documentation says to call realpath on it - and a package manager that
-    // exposes its binaries as links into a cellar is the ordinary case, not an
-    // exotic one. Linux's /proc/self/exe is already resolved and does not mind
-    // being asked twice.
+
     char resolved[PATH_MAX];
     if (realpath(full.c_str(), resolved) != NULL) full = resolved;
 #endif
@@ -211,23 +172,12 @@ std::string Driver::defaultRuntimeObject(const std::string &targetName) const {
         "/shmrt-" + targetName + (debug_ ? "-debug" : "") + extension;
     const std::string here = programDirectory(program_);
 
-    // Two layouts, and the compiler should run in both.
-    //
-    // Beside it, which is this repository: shc.exe and lib/ are siblings, and
-    // that is what every suite here relies on.
     const std::string beside = here + "/lib" + leaf;
     if (exists(beside)) return beside;
 
-    // One directory up, which is what an install looks like: <prefix>/bin/
-    // holds the compiler and <prefix>/lib/ the runtime, and a package that had
-    // to put its runtime in <prefix>/bin/lib/ to be found would be a package
-    // nobody could read. --runtime= still overrides both.
     const std::string installed = here + "/../lib" + leaf;
     if (exists(installed)) return installed;
 
-    // Neither is there. The one beside is named, because that is the layout
-    // somebody working in this repository has and the message should point at
-    // what they were expecting.
     return beside;
 }
 
@@ -257,8 +207,7 @@ bool Driver::parseArguments(const std::vector<std::string> &arguments) {
         } else if (input_.empty()) {
             input_ = a;
         } else {
-            // The first file is the program; the rest are where to look. Only
-            // one main() is ever compiled, and it is the first file's.
+
             companions_.push_back(a);
         }
     }
@@ -280,8 +229,6 @@ int Driver::run(const std::vector<std::string> &arguments) {
         return 2;
     }
 
-    // The program, and the other files it may reach into. Named ones win; a
-    // program named alone gets the ones beside it, unless --no-search.
     std::vector<std::string> files;
     files.push_back(input_);
     if (!companions_.empty()) {
@@ -305,13 +252,9 @@ int Driver::run(const std::vector<std::string> &arguments) {
             return 2;
         }
 
-        // Lex. Tokenizing stops at the offending character, so nothing
-        // downstream is trustworthy and the error is reported alone.
         LexResult lexed = tokenize(source);
         if (lexed.failed) {
-            // A file the compiler went looking in is not the program, and a
-            // program should not be refused because something else in the
-            // directory does not lex. It is dropped, and said so.
+
             if (i > 0) {
                 std::cerr << "shc: ignoring " << names[i] << ": " << lexed.error << "\n";
                 continue;
@@ -323,7 +266,6 @@ int Driver::run(const std::vector<std::string> &arguments) {
             return 1;
         }
 
-        // Parse. Reported one at a time; parsing stops at the first.
         Diagnostics quiet;
         Parser parser(lexed.tokens, i == 0 ? diagnostics : quiet, static_cast<int>(i));
         std::unique_ptr<Program> parsed = parser.parse();
@@ -363,11 +305,6 @@ int Driver::run(const std::vector<std::string> &arguments) {
         return 1;
     }
 
-    // Find the rest of the program. A call this file does not answer is
-    // looked for in the others, and what is found is moved in - along with
-    // whatever it calls in turn, and the globals of its own file that it
-    // reads. Nothing arrives that was not asked for, which is why a file's
-    // main() never does.
     if (program && units.size() > 1) {
         std::vector<Unit> others(std::make_move_iterator(units.begin() + 1),
                                  std::make_move_iterator(units.end()));
@@ -380,18 +317,10 @@ int Driver::run(const std::vector<std::string> &arguments) {
         }
         program = std::move(units[0].program);
 
-        // Said out loud, on standard error so it can never be mistaken for
-        // the program's own output. A program that quietly grew a dependency
-        // on another file is a program that will one day be moved without it.
         for (const std::string &from : resolver.used())
             std::cerr << "shc: also compiled " << from << "\n";
     }
 
-    // Check. Unlike the two stages above it does not stop at the first
-    // problem: it types the whole program, reports everything it finds, and
-    // only then says whether the program may run. That is why several
-    // messages can appear at once, and why warnings appear for programs that
-    // run anyway.
     Checker checker(diagnostics);
     const bool sound = checker.check(*program);
     {
@@ -399,9 +328,7 @@ int Driver::run(const std::vector<std::string> &arguments) {
         diagnostics.writeTo(text);
         std::cout << text;
     }
-    // A construct the compiler has not reached yet is not a diagnostic about
-    // the program. It says so in its own words, on standard error, with a
-    // status of its own.
+
     if (diagnostics.hasUnsupported()) {
         for (const Message &m : diagnostics.unsupportedItems()) {
             std::cerr << "shc: not compiled yet: " << m.text
@@ -415,16 +342,10 @@ int Driver::run(const std::vector<std::string> &arguments) {
     CodeGen generator(*emitter);
     generator.run(*program, input_, names);
 
-    // Whether -o was given, before the default hides it. -c needs to know:
-    // with a name it is the object's, and without one the object is the
-    // input's name with .o, which is what cc -c does.
     const bool named = !output_.empty();
     if (output_.empty()) {
         output_ = stem(input_);
-        // A program with no extension is not something cmd will run, so the
-        // default name gets one - the same rule cc1 keeps, where a.out is
-        // a.exe on a Windows host. A name given with -o is taken as given,
-        // also as cc1 does: whoever wrote it knows what they meant.
+
 #ifdef _WIN32
         if (!assemblyOnly_ && !objectOnly_) output_ += ".exe";
 #endif
@@ -446,20 +367,8 @@ int Driver::run(const std::vector<std::string> &arguments) {
 
     if (runtimeObject_.empty()) runtimeObject_ = defaultRuntimeObject(targetName_);
 
-    // -o names the object exactly as it names the assembly under -S. It used
-    // to have ".o" put on the end of it whatever it was, so `shc f.shm -c -o
-    // f.o` wrote f.o.o - which is a nuisance by hand and fatal to anything
-    // that has to name the object again to link it.
 #ifdef _WIN32
-    // A Windows host has no 'c++' to hand either job to, so the two tools are
-    // named: ml64 assembles the MASM this compiler writes and link produces the
-    // program. Both ship with Visual Studio and reach PATH only after
-    // vcvars64.bat has run - which is why a failure here says so rather than
-    // leaving "'ml64' is not recognized" to be read as a broken compiler.
-    //
-    // This is the same pair, in the same order, that Compiler-C's driver names
-    // on this host, and the same one tests/remote-windows.sh has been running
-    // by hand in build.bat since before shc could be built here at all.
+
     const std::string objectPath =
         objectOnly_ ? (named ? output_ : output_ + ".obj") : output_ + ".obj";
 
@@ -478,9 +387,7 @@ int Driver::run(const std::vector<std::string> &arguments) {
     command = "link /nologo /subsystem:console /out:" + shellQuote(output_) + " " +
               shellQuote(objectPath) + " " + shellQuote(runtimeObject_);
     status = shell(command);
-    // The object is this driver's own working file when a program was asked
-    // for, and goes with the assembly - only -c leaves one behind, because
-    // only -c was asked for one.
+
     std::remove(objectPath.c_str());
     if (status != 0) {
         std::cerr << "shc: the linker failed - the command was:\n  " << command << "\n";
@@ -503,8 +410,6 @@ int Driver::run(const std::vector<std::string> &arguments) {
 #endif
 }
 
-// Said once, where it is useful, rather than left for somebody to work out
-// from "'ml64' is not recognized as an internal or external command".
 void Driver::noteWindowsToolchain() {
 #ifdef _WIN32
     std::cerr <<
@@ -513,4 +418,4 @@ void Driver::noteWindowsToolchain() {
 #endif
 }
 
-}  // namespace shalimar
+}

@@ -32,15 +32,12 @@ public:
     }
 };
 
-}  // namespace
+}
 
 std::vector<std::string> Target::names() {
     return {"arm64-darwin", "x86_64-linux", "x86_64-windows"};
 }
 
-// Being hosted on a machine is a separate axis from targeting it: all three
-// backends are built into every copy of the compiler, and this only says
-// which one it can also assemble and link.
 std::string Target::hostName() {
 #if defined(_WIN32)
     return "x86_64-windows";
@@ -58,4 +55,4 @@ std::unique_ptr<Target> Target::forName(const std::string &name) {
     return nullptr;
 }
 
-}  // namespace shalimar
+}

@@ -22,9 +22,7 @@ void Arm64DarwinEmitter::scratchConstant(uint64_t value) {
 
 std::string Arm64DarwinEmitter::slotAddress(int slot, int width) {
     const int offset = 8 * slot;
-    // A scaled unsigned offset is twelve bits times the access width: 16380
-    // for a word, 32760 for a doubleword. Every offset here is a multiple of
-    // eight, so only the ceiling can fail.
+
     const int ceiling = 4095 * width;
     if (offset <= ceiling) return "[sp, #" + std::to_string(offset) + "]";
     scratchConstant(static_cast<uint64_t>(offset));
@@ -68,18 +66,13 @@ void Arm64DarwinEmitter::beginFunction(const std::string &name) {
 }
 
 void Arm64DarwinEmitter::endFunction(int slots) {
-    // The stack pointer must stay sixteen-byte aligned, so the reservation is
-    // rounded up rather than taken as it comes.
+
     frameBytes_ = (slots * 8 + 15) & ~15;
 
     adjustStack("add", frameBytes_);
     instruction("ldp\tx29, x30, [sp], #" + std::to_string(frameRecordBytes));
     instruction("ret");
 
-    // stp with a pre-index writes the pair and moves sp in one instruction,
-    // and sixteen bytes is what the alignment wanted anyway. The reservation
-    // that follows is built into the prologue text rather than emitted,
-    // because its size is only known now.
     const size_t bodyMark = text_.size();
     adjustStack("sub", frameBytes_);
     std::string reservation = text_.substr(bodyMark);
@@ -107,8 +100,6 @@ void Arm64DarwinEmitter::loadIntConstant(int32_t value) {
     materialise("w0", static_cast<uint32_t>(value), false);
 }
 
-// Built in a scratch integer register and moved across. x9 is a caller-saved
-// temporary, so nothing of ours is live in it.
 void Arm64DarwinEmitter::loadRealConstant(double value) {
     materialise("x9", bitsOf(value), true);
     instruction("fmov\td0, x9");
@@ -123,7 +114,7 @@ void Arm64DarwinEmitter::loadSlot(Slot kind, int slot) {
 }
 
 void Arm64DarwinEmitter::setArg(Slot kind, int index) {
-    if (index == 0) return;           // the accumulator is already register 0
+    if (index == 0) return;
     const char file = registerFile(kind);
     const std::string move = kind == Slot::Real ? "fmov\t" : "mov\t";
     instruction(move + file + std::to_string(index) + ", " + file + "0");
@@ -139,9 +130,6 @@ void Arm64DarwinEmitter::spillArgument(Slot kind, int registerIndex, int slot) {
                 ", " + slotAddress(slot, byteWidth(kind)));
 }
 
-// x9 carries the block. It is a caller-saved temporary, set immediately
-// before the call and read immediately after entry, so nothing stands
-// between the two that could want it.
 void Arm64DarwinEmitter::setOverflowBlock(int slot) {
     const int offset = 8 * slot;
     if (offset <= 4095) {
@@ -152,8 +140,6 @@ void Arm64DarwinEmitter::setOverflowBlock(int slot) {
     instruction("add\tx9, sp, x16");
 }
 
-// Through x17, not through the accumulator: at this point in a prologue the
-// argument registers are still live, and x0 is one of them.
 void Arm64DarwinEmitter::spillOverflowArgument(Slot kind, int index, int slot) {
     const char file = kind == Slot::Real ? 'd' : 'x';
     const std::string reg = std::string(1, file) + "17";
@@ -176,8 +162,6 @@ void Arm64DarwinEmitter::loadSlotAddress(int slot) {
     instruction("add\tx0, sp, x16");
 }
 
-// x9 is a caller-saved temporary, so the pointer can be brought out of its
-// slot without disturbing the accumulator that is about to be written.
 void Arm64DarwinEmitter::storeThroughPointer(Slot kind, int pointerSlot) {
     instruction("ldr\tx17, " + slotAddress(pointerSlot, 8));
     instruction(std::string("str\t") + registerFile(kind) + "0, [x17]");
@@ -201,9 +185,6 @@ void Arm64DarwinEmitter::addressGlobals() {
     instruction("add\tx17, x17, " + symbol("shm_globals") + "@PAGEOFF");
 }
 
-// The block's address goes into x17 and the offset is folded into it when it
-// is too large for the scaled form, which a program with thousands of
-// globals reaches.
 std::string Arm64DarwinEmitter::globalAddress(int index, int width) {
     addressGlobals();
     const int offset = 8 * index;
@@ -239,8 +220,6 @@ void Arm64DarwinEmitter::defineBytes(int id, const std::string &bytes) {
     if (!line.empty()) data_ += line + "\n";
 }
 
-// A page and an offset: Mach-O has no single instruction that reaches an
-// arbitrary address, and the pair is what the linker knows how to relax.
 void Arm64DarwinEmitter::loadBytesAddress(int id) {
     instruction("adrp\tx0, " + bytesLabel(id) + "@PAGE");
     instruction("add\tx0, x0, " + bytesLabel(id) + "@PAGEOFF");
@@ -262,4 +241,4 @@ void Arm64DarwinEmitter::jumpIfZero(int id) {
     instruction("cbz\tw0, " + labelName(id));
 }
 
-}  // namespace shalimar
+}

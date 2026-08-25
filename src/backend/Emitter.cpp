@@ -10,4 +10,4 @@ uint64_t Emitter::bitsOf(double value) {
     return bits;
 }
 
-}  // namespace shalimar
+}

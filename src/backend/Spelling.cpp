@@ -4,13 +4,11 @@ namespace shalimar {
 namespace {
 
 struct RegNames {
-    const char *wide;    // 8 bytes
-    const char *dword;   // 4 bytes
-    const char *byte;    // 1 byte
+    const char *wide;
+    const char *dword;
+    const char *byte;
 };
 
-// Indexed by Reg. The SSE entries answer the same name at every width, which
-// is what lets reg() take a width unconditionally.
 const RegNames table[] = {
     {"rax", "eax",  "al"},    {"rcx", "ecx",  "cl"},
     {"rdx", "edx",  "dl"},    {"rbx", "ebx",  "bl"},
@@ -37,7 +35,7 @@ std::string hex(uint64_t value) {
     return out;
 }
 
-}  // namespace
+}
 
 const char *Spelling::name(Reg r, int width) {
     const RegNames &n = table[static_cast<int>(r)];
@@ -45,8 +43,6 @@ const char *Spelling::name(Reg r, int width) {
     if (width == 1) return n.byte;
     return n.dword;
 }
-
-// --------------------------------------------------------------------- GNU
 
 char GnuSpelling::suffix(int width) {
     if (width == 8) return 'q';
@@ -106,15 +102,12 @@ std::string GnuSpelling::offsetFrom(Reg base, int offset, int) const {
     return std::to_string(offset) + "(" + reg(base, 8) + ")";
 }
 
-// The label owns its line and the bytes follow it.
 std::string GnuSpelling::byteArrayHead() const { return ":\n\t.byte\t"; }
 std::string GnuSpelling::byteDirective() const { return "\t.byte\t"; }
 
 std::string GnuSpelling::dataReference(const std::string &label) const {
     return label + "(%rip)";
 }
-
-// -------------------------------------------------------------------- MASM
 
 std::string MasmSpelling::reg(Reg r, int width) const {
     return name(r, width);
@@ -124,17 +117,10 @@ std::string MasmSpelling::imm(int64_t value) const {
     return std::to_string(value);
 }
 
-// MASM reads a hexadecimal constant by its trailing 'h', and refuses one that
-// starts with a letter - so a leading zero goes in front whether it is needed
-// or not.
 std::string MasmSpelling::wideImm(uint64_t value) const {
     return "0" + hex(value) + "h";
 }
 
-// Destination first, and no suffix: the register operand carries the width.
-// Where neither operand does - a memory destination taking an immediate - the
-// caller supplies a 'DWORD PTR' operand rather than this adding one, because
-// only the caller knows which it meant.
 std::string MasmSpelling::binary(const char *mnemonic, int,
                                  const std::string &src, const std::string &dst) const {
     return std::string(mnemonic) + "\t" + dst + ", " + src;
@@ -169,15 +155,9 @@ std::string MasmSpelling::offsetFrom(Reg base, int offset, int width) const {
     return std::string(size) + " PTR [" + reg(base, 8) + "+" + std::to_string(offset) + "]";
 }
 
-// MASM names a byte array with a label and no colon, and the DB has to be on
-// the same line: the directive is what defines the label, so a line holding
-// the name alone is a syntax error rather than a declaration.
 std::string MasmSpelling::byteArrayHead() const { return "\tDB\t"; }
 std::string MasmSpelling::byteDirective() const { return "\tDB\t"; }
 
-// A bare label. 'lea rax, OFFSET x' is not something ml64 accepts; 'lea rax,
-// x' is, and it assembles to the instruction-pointer-relative form that the
-// GNU spelling asks for explicitly.
 std::string MasmSpelling::dataReference(const std::string &label) const {
     return label;
 }
@@ -187,4 +167,4 @@ std::string MasmSpelling::frameSlot(int offset, int width) const {
     return std::string(size) + " PTR [rsp+" + std::to_string(offset) + "]";
 }
 
-}  // namespace shalimar
+}

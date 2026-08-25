@@ -1,13 +1,4 @@
-// Printing.
-//
-// Each item is followed by a single space and the newline is appended once at
-// the end, so '?' always leaves a trailing space before its newline.
-//
-// A numeric array prints as a grid, right-aligned in columns, so a program
-// needs no display function of its own. A char array is not a grid - it
-// prints as text, inline. A multi-row grid starts on its own line, so a label
-// written before it does not push the first row out of column; that is the
-// one rule that needs to know whether anything stands on the line already.
+
 #include "Internal.h"
 
 #include <cmath>
@@ -18,9 +9,6 @@
 namespace shm {
 namespace {
 
-// A real prints to a fixed number of decimal places. Past 1e15 a double has
-// no significant digits left to land after the point, so those values and the
-// non-finite ones keep the compact spelling instead.
 std::string fixed(double v, int places) {
     char text[400];
     if (std::isfinite(v) && v < 1e15 && v > -1e15) {
@@ -46,8 +34,6 @@ std::string cell(const Array *array, int32_t i, int places) {
     }
 }
 
-// Flattens to rows: an array of scalars is one row, an array of arrays is
-// whatever its elements flatten to, in order.
 void collect(const Array *array, int places, std::vector<std::vector<std::string>> &rows) {
     if (array->element != KindRef) {
         std::vector<std::string> row;
@@ -58,7 +44,7 @@ void collect(const Array *array, int places, std::vector<std::vector<std::string
     for (int32_t i = 0; i < array->count; ++i) collect(array->refs()[i], places, rows);
 }
 
-}  // namespace
+}
 
 Console &Console::shared() {
     static Console instance;
@@ -79,8 +65,6 @@ void Console::printReal(double value) {
     emit((fixed(value, scalarPlaces_) + " ").c_str());
 }
 
-// A char is a character, not a number, and char(0) is the terminator - which
-// prints as nothing at all.
 void Console::printChar(unsigned char value) {
     if (value == 0) emit(" ");
     else { const char text[3] = {static_cast<char>(value), ' ', '\0'}; emit(text); }
@@ -127,9 +111,6 @@ void Console::endLine() {
 
 void Console::flush() { std::fflush(stdout); }
 
-// prec(n) runs -1 through 24 and clamps to that range at both ends, so
-// nothing is ever refused. 24 is past the seventeen significant digits a
-// double carries, while still leaving room to read a 1e-20 tolerance.
 void Console::setPlaces(int32_t requested) {
     int places = requested < -1 ? -1 : (requested > 24 ? 24 : requested);
     if (places < 0) { resetPlaces(); return; }
@@ -142,7 +123,7 @@ void Console::resetPlaces() {
     gridPlaces_ = defaultGridPlaces;
 }
 
-}  // namespace shm
+}
 
 extern "C" {
 
@@ -161,4 +142,4 @@ void shm_print_places(int32_t places) { shm::Console::shared().setPlaces(places)
 
 void shm_line_end(void) { shm::Console::shared().endLine(); }
 
-}  // extern "C"
+}

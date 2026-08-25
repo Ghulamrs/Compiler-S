@@ -1,9 +1,4 @@
-// x86-64, ELF, System V.
-//
-// GNU syntax and no underscore on a symbol. What is left after the Abi and
-// the Spelling have taken their share is small, and that is the point: the
-// difference between this and the Windows target is meant to be visible as a
-// difference, not buried in two copies of the same instruction selection.
+
 #pragma once
 
 #include "X86_64.h"
@@ -23,7 +18,7 @@ public:
     void label(int id) override;
 
 private:
-    // '.L' is what the GNU assembler treats as a temporary symbol on ELF.
+
     std::string labelName(int id) const override { return ".Lshm" + std::to_string(id); }
     std::string bytesLabel(int id) const override { return ".Lshmb" + std::to_string(id); }
     void openConstSection() override;
@@ -34,4 +29,4 @@ private:
     GnuSpelling spelling_impl_;
 };
 
-}  // namespace shalimar
+}

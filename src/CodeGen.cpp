@@ -11,7 +11,7 @@ namespace shalimar {
 
 std::string CodeGen::mangle(const std::string &name) {
     if (name == "main") return "shm_user_main";
-    // The one that has no Shalimar name: the globals' initializer.
+
     if (name.empty()) return "shm_init_globals";
     return "shmf_" + name;
 }
@@ -22,13 +22,6 @@ void CodeGen::run(Program &program, const std::string &sourceName,
     emitter_.defineGlobals(program.globalSlots());
     units_ = units;
 
-    // The globals are created in file order, before main() runs, which is
-    // where a global whose initializer calls a function that reads a later
-    // global still fails - a cycle rather than an ordering, and the one case
-    // the checker leaves to the run.
-    // The files, named for the runtime, before anything can fail in one. Only
-    // the ones something was taken from: a file the compiler looked in and did
-    // not use is not part of this program.
     std::set<int> named;
     for (std::unique_ptr<Function> &f : program.functions()) {
         if (f->proto().unit > 0) named.insert(f->proto().unit);
@@ -37,10 +30,6 @@ void CodeGen::run(Program &program, const std::string &sourceName,
         if (g->unit() > 0) named.insert(g->unit());
     }
 
-    // The file names go in a function of their own, called before anything
-    // else runs. A session has to know the numbering before it can be asked
-    // for a breakpoint in a file, and the numbers depend on which files this
-    // compiler was given.
     named.insert(0);
     generateFileNames(named);
 
@@ -72,14 +61,6 @@ void CodeGen::generateFileNames(const std::set<int> &units) {
     emitter_.endFunction(0);
 }
 
-// Seeds are what the globals' own initializers call; edges are what those
-// functions call in turn. Anything in the closure can run while the globals
-// are still being made, so a global read inside one has to ask whether the
-// box exists yet. Nothing else can: by the time any other function runs,
-// shm_init_globals has returned.
-//
-// Usually empty. A global initialized by a literal calls nothing, so the
-// ordinary program compiles to exactly what it did before this existed.
 void CodeGen::reachableFromGlobals(Program &program) {
     initializerCanReach_.clear();
 
@@ -92,7 +73,7 @@ void CodeGen::reachableFromGlobals(Program &program) {
     while (!wanted.empty()) {
         const std::string name = wanted.back();
         wanted.pop_back();
-        if (!initializerCanReach_.insert(name).second) continue;   // already followed
+        if (!initializerCanReach_.insert(name).second) continue;
         for (std::unique_ptr<Function> &f : program.functions()) {
             if (f->proto().name != name) continue;
             for (const std::string &next : calledNamesIn(*f)) wanted.push_back(next);
@@ -101,8 +82,7 @@ void CodeGen::reachableFromGlobals(Program &program) {
 }
 
 void CodeGen::generate(Function &function) {
-    // The initializer is where the globals are made, so a read inside it is
-    // the plainest form of the cycle; the rest is the closure worked out above.
+
     checkGlobalReads_ = function.proto().name.empty() ||
                         initializerCanReach_.count(function.proto().name) > 0;
 
@@ -115,14 +95,6 @@ void CodeGen::generate(Function &function) {
 
     emitter_.beginFunction(mangle(proto.name));
 
-    // Parameters come first and in order, so argument n goes to slot n; the
-    // addresses of the outputs follow when there is more than one. A
-    // reference parameter's slot holds the caller's address rather than the
-    // value, which is why it is spilled wide whatever the parameter's type.
-    //
-    // Every argument that came in a register is spilled before any that came
-    // in the block, because unpacking the block needs a register to borrow
-    // and at this point the argument registers are all still live.
     const std::vector<Place> places = planArguments(proto);
     for (int pass = 0; pass < 2; ++pass) {
         for (size_t i = 0; i < places.size(); ++i) {
@@ -139,9 +111,6 @@ void CodeGen::generate(Function &function) {
         }
     }
 
-    // The recursion ceiling. Its message names the function, so the name goes
-    // into the module's read-only bytes. The globals' initializer is not a
-    // Shalimar function and cannot recurse, so it is left out of the count.
     const bool counted = !proto.name.empty();
     if (counted) {
         const int nameId = newBytesId();
@@ -164,8 +133,7 @@ void CodeGen::generate(Function &function) {
         emitter_.setArg(Slot::Int, 0);
         emitter_.call("shm_leave");
     }
-    // The result is fetched after the counter comes down, because that is a
-    // call and a call does not preserve an accumulator.
+
     if (function.resultSlot() >= 0) {
         emitter_.loadSlot(slotKind(proto.outputs[0]), function.resultSlot());
     }
@@ -173,11 +141,6 @@ void CodeGen::generate(Function &function) {
     current_ = nullptr;
 }
 
-// Arguments in order: the declared inputs, then one pointer for each output
-// when there is more than one. Microsoft's convention is positional, so
-// spending an integer slot spends the matching SSE one; System V's and
-// Apple's keep two counts. Whatever the registers cannot take goes into the
-// overflow block, numbered in argument order.
 std::vector<CodeGen::Place> CodeGen::planArguments(const Prototype &proto) const {
     std::vector<Slot> kinds;
     for (const Param &parameter : proto.inputs) {
@@ -215,10 +178,7 @@ std::vector<CodeGen::Place> CodeGen::planArguments(const Prototype &proto) const
 }
 
 void CodeGen::generate(Stmt &statement) {
-    // A runtime error names the statement it happened in, so the runtime is
-    // told which one that is before the statement runs. One call per
-    // statement rather than one per expression is exactly the resolution the
-    // language promises.
+
     emitter_.setLine(statement.unit(), statement.line());
     statement.accept(*this);
 }
@@ -238,10 +198,6 @@ void CodeGen::evaluateCondition(Expr &expr) {
     emitter_.call("shm_real_truth");
 }
 
-// How many of these a function needs is not predicted anywhere: it is
-// counted here, as they are taken, and told to the emitter when the body is
-// finished. A frame sized by a second party's estimate is a store past its
-// end the first time the two disagree.
 int CodeGen::reserve() {
     const int slot = evaluationBase_ + depth_++;
     if (depth_ > deepest_) deepest_ = depth_;
@@ -254,8 +210,6 @@ bool CodeGen::isReal(const Type *type) {
     return type && type->kind() == Type::Kind::Real;
 }
 
-// The scalar at the bottom of however many array layers. The runtime builds
-// the layers between for itself, given the rank.
 int CodeGen::elementKind(const Type *arrayType) {
     switch (arrayType->scalar()->kind()) {
     case Type::Kind::Real: return SHM_REAL;
@@ -282,8 +236,6 @@ const char *CodeGen::setterFor(const Type *elementType) {
     }
 }
 
-// An array travels as a pointer, which is a wide integer; a char is a byte
-// held in an int; everything else is what it looks like.
 Slot CodeGen::slotKind(const Type *type) {
     if (type && type->isArray()) return Slot::Wide;
     return isReal(type) ? Slot::Real : Slot::Int;
@@ -313,11 +265,6 @@ void CodeGen::visit(RealLit &node) {
     emitter_.loadRealConstant(node.value());
 }
 
-// A plain load, and it has to stay one. Three of its four callers sit between
-// a loadSlotIntoArg and a setArg - the array-fill and string-append plumbing -
-// where emitting a call would clobber the argument already in place. That cost
-// a segfault on a program that was perfectly legal, so the existence check
-// lives in visit(Var) below, which is where a *program* reads a global.
 void CodeGen::readSymbol(const Symbol &symbol) {
     if (symbol.isGlobal()) emitter_.loadGlobal(slotKind(symbol.type()), symbol.slot());
     else if (symbol.isReference()) emitter_.loadThroughPointer(slotKind(symbol.type()), symbol.slot());
@@ -335,11 +282,7 @@ void CodeGen::visit(Var &node) {
         emitter_.loadRealConstant(node.constant());
         return;
     }
-    // Does this box exist yet? Only asked inside what a global's initializer
-    // can reach - see reachableFromGlobals - and only here, where a program
-    // reads a global rather than where the generator does. The name travels so
-    // the message can be the app's, "Undefined variable 'a'", and not a slot
-    // number nobody wrote.
+
     if (checkGlobalReads_ && node.symbol()->isGlobal()) {
         const int id = newBytesId();
         emitter_.defineBytes(id, node.symbol()->name() + std::string(1, '\0'));
@@ -352,8 +295,6 @@ void CodeGen::visit(Var &node) {
     readSymbol(*node.symbol());
 }
 
-// A string literal is a char array made fresh each time it is evaluated,
-// from bytes that live in the module's read-only data.
 void CodeGen::visit(StrLit &node) {
     emitter_.defineBytes(node.id(), node.text() + std::string(1, '\0'));
     emitter_.loadIntConstant(static_cast<int32_t>(node.text().size()));
@@ -364,13 +305,9 @@ void CodeGen::visit(StrLit &node) {
 }
 
 void CodeGen::visit(Blank &) {
-    // A blank contributes nothing: the array it sits in arrived zeroed.
+
 }
 
-// One level at a time, each an array of its own. Building the whole shape in
-// one call would need every extent at once, and a literal's deeper extents
-// are only known by looking inside it - so the recursion that reads the
-// literal is the recursion that builds it.
 void CodeGen::buildLiteral(ArrayLit &literal) {
     const Type *type = literal.type();
     const Type *element = type->element();
@@ -437,16 +374,10 @@ void CodeGen::visit(Precision &node) {
     emitter_.call("shm_print_places");
 }
 
-// Whatever is in the accumulator, as a `to` instead of a `from`. Written apart
-// from visit(Convert) because a multi-assign has a value to convert and no
-// expression to hang a ConvertNode on - the value arrives from a call's output
-// slot, which the checker never saw as a tree.
 void CodeGen::convertAccumulator(const Type *from, const Type *to) {
     if (!from || !to || from == to) return;
     passAccumulator(from, 0);
 
-    // A char is held in an int register, so widening out of one is free and
-    // only the narrowings need asking about.
     if (to == Type::realType()) {
         if (from == Type::realType()) return;
         emitter_.call("shm_int_to_real");
@@ -463,16 +394,6 @@ void CodeGen::visit(Convert &node) {
     convertAccumulator(node.expr().type(), node.type());
 }
 
-// Left into a slot, right into the accumulator, then the runtime is asked
-// for the answer.
-//
-// Every operation goes through the runtime. The int ones can fail - passing
-// an int limit is an error here, never a wrapped value that looks right - and
-// the real ones cannot, but they take the same shape so that the generator
-// has one thing to say and the check sits beside the rule it enforces rather
-// than being written out three times in three instruction sets. Inlining the
-// ones that cannot fail is an optimisation, and deliberately not this pass's
-// business yet.
 void CodeGen::visit(Binary &node) {
     const Type *operands = node.lhs().type();
 
@@ -481,15 +402,9 @@ void CodeGen::visit(Binary &node) {
     store(operands, slot);
     evaluate(node.rhs());
 
-    // Descending order: argument 1 is taken from the accumulator, which
-    // argument 0 would otherwise have overwritten on a target where the two
-    // share a register.
     passAccumulator(operands, 1);
     passSlot(operands, slot, 0);
 
-    // Two strings join or compare. The comparison comes back as a number
-    // below, at or above zero, and the operator decides which of the six
-    // answers that is - so one runtime entry point serves all six.
     if (operands->isArray()) {
         if (node.op() == Binary::Op::Add) {
             release();
@@ -497,10 +412,7 @@ void CodeGen::visit(Binary &node) {
             return;
         }
         emitter_.call("shm_text_compare");
-        // The answer is parked before the zero is loaded. On a target where
-        // the accumulator is also the first argument register, loading the
-        // zero would otherwise destroy the very number being compared - and
-        // it did: 't < "b"' answered 0 for every pair of strings.
+
         emitter_.storeSlot(Slot::Int, slot);
         emitter_.loadIntConstant(0);
         emitter_.setArg(Slot::Int, 1);
@@ -513,17 +425,11 @@ void CodeGen::visit(Binary &node) {
     emitter_.call(Binary::runtimeFor(node.op(), operands));
 }
 
-// A call: every argument into a slot of its own first, then the registers
-// filled from those slots. Evaluating straight into the registers would not
-// work - an argument's own evaluation may itself be a call.
 void CodeGen::generateCall(Call &node) {
     const Prototype &proto = *node.prototype();
     const size_t count = node.arguments().size();
     const std::vector<Place> places = planArguments(proto);
 
-    // The overflow block is reserved before anything else, so that its slots
-    // are next to each other: the callee is handed one address and counts
-    // from it.
     int overflowCount = 0;
     for (const Place &place : places) {
         if (place.overflow) ++overflowCount;
@@ -543,10 +449,7 @@ void CodeGen::generateCall(Call &node) {
         slots.push_back(reserve());
         evaluate(*node.arguments()[i]);
         if (proto.inputs[i].byReference) {
-            // Copy-in: the callee works on its own box, and the value is
-            // written back when the call returns. A converted copy would
-            // silently stop being the caller's, which is why the checker
-            // insisted the types match exactly.
+
             referenceSlots[i] = scratch++;
             emitter_.storeSlot(slotKind(proto.inputs[i].type), referenceSlots[i]);
         } else {
@@ -554,8 +457,6 @@ void CodeGen::generateCall(Call &node) {
         }
     }
 
-    // The overflow places are filled first, because filling them uses the
-    // accumulator and the registers must be left standing.
     for (size_t i = 0; i < places.size(); ++i) {
         if (!places[i].overflow) continue;
         if (i < count && referenceSlots[i] >= 0) {
@@ -568,8 +469,6 @@ void CodeGen::generateCall(Call &node) {
         emitter_.storeSlot(places[i].kind, blockBase + places[i].index);
     }
 
-    // Then the registers, descending, so that a target which shares one with
-    // the accumulator fills it last.
     for (size_t i = places.size(); i-- > 0;) {
         if (places[i].overflow) continue;
         if (i >= count) {
@@ -589,26 +488,13 @@ void CodeGen::generateCall(Call &node) {
     for (size_t i = 0; i < count; ++i) release();
     for (int i = 0; i < overflowCount; ++i) release();
 
-    // Copy-back, to the variable or the element the argument named.
-    //
-    // The element half is why this is not one line. 8.2 admits an element -
-    // "bump(v[1]) writes back to v[1]" - and Index::isAddressable says so, so
-    // the checker lets one through. This used to static_cast every argument to
-    // Var& and store through whatever pointer sat where a Var keeps its
-    // symbol: a wild write for exactly the call the document uses as its
-    // example. Nothing caught it because tests/cases/functions.shm only ever
-    // passes a plain variable.
     for (size_t i = 0; i < count; ++i) {
         if (referenceSlots[i] < 0) continue;
         const Type *type = proto.inputs[i].type;
         Expr &argument = *node.arguments()[i];
 
         if (Index *element = dynamic_cast<Index *>(&argument)) {
-            // The base and the index are worked out again here rather than
-            // kept from the call. They were pure in every case the language
-            // can express as an index - a variable, a literal, arithmetic on
-            // them - and holding two more slots across the call to avoid
-            // re-reading them would cost every call to pay for none of them.
+
             const int container = reserve();
             const int index = reserve();
 
@@ -633,14 +519,9 @@ void CodeGen::generateCall(Call &node) {
     }
 }
 
-
 void CodeGen::generateBuiltin(Call &node) {
     const Builtin &fn = builtin(node.builtin());
 
-    // 'len(A)' is the first dimension, asked of the array itself. The axis
-    // goes in first: on a target where the accumulator is also the first
-    // argument register, loading the axis afterwards would overwrite the
-    // array it had just been put in.
     if (fn.shape == Builtin::Shape::Length) {
         const int slot = reserve();
         evaluate(*node.arguments()[0]);
@@ -653,7 +534,6 @@ void CodeGen::generateBuiltin(Call &node) {
         return;
     }
 
-    // Two arguments at most, so no built-in ever overflows the registers.
     const bool intAnswer = node.type() == Type::intType();
     const Slot kind = intAnswer ? Slot::Int : Slot::Real;
 
@@ -673,8 +553,7 @@ void CodeGen::generateBuiltin(Call &node) {
 void CodeGen::visit(Call &node) {
     if (node.builtin() >= 0) { generateBuiltin(node); return; }
     generateCall(node);
-    // In an expression a call is worth its first output, which a
-    // multi-output function left in the first scratch slot.
+
     if (node.prototype()->returnsByPointer()) {
         emitter_.loadSlot(slotKind(node.type()), node.scratchBase());
     }
@@ -701,16 +580,6 @@ void CodeGen::visit(Return &node) {
     emitter_.jump(exitLabel_);
 }
 
-// The output types are the call's, and the targets' are the targets'. They are
-// the same thing when a target was created here - 7.3 makes a new one with the
-// declared output type - and need not be when the target already existed:
-// 5.2 says a conversion at a declared destination is automatic and silent, and
-// an existing variable is a declared destination.
-//
-// It used to load each value with the *target's* kind, which is not a
-// conversion but a reinterpretation: the callee stored a double and an int
-// slot read its bits back as an integer. Garbage, silently, from a program the
-// document allows.
 void CodeGen::visit(MultiAssign &node) {
     Call &call = static_cast<Call &>(*node.call());
 
@@ -738,9 +607,6 @@ void CodeGen::visit(MultiAssign &node) {
     }
 }
 
-// Extents go into consecutive slots so that their address can be handed over
-// as an array. Slot n sits eight bytes above slot n-1, so extent i goes in
-// slot i and the runtime reads them in the order they were written.
 void CodeGen::makeArray(const Type *type, std::vector<ExprPtr> &extents, int extentBase) {
     const int rank = static_cast<int>(extents.size());
     for (int i = 0; i < rank; ++i) {
@@ -757,10 +623,6 @@ void CodeGen::makeArray(const Type *type, std::vector<ExprPtr> &extents, int ext
     emitter_.call("shm_array_make");
 }
 
-// The box exists from here on, so a read of it from anything the rest of the
-// initializers reach will find it. Said as each global is made rather than
-// once at the end, because the whole point is the half-built state in
-// between: globals below the mark exist and the ones at or above it do not.
 void CodeGen::markGlobalMade(const Symbol &symbol) {
     if (!symbol.isGlobal()) return;
     emitter_.loadIntConstant(symbol.slot() + 1);
@@ -772,13 +634,10 @@ void CodeGen::visit(Declare &node) {
     if (node.declaredType()->isArray()) {
         makeArray(node.declaredType(), node.extents(), node.extentBase());
         writeSymbol(*node.symbol());
-        // Before the initializer runs, and before the readSymbol below, which
-        // would otherwise ask whether the array exists while making it.
+
         markGlobalMade(*node.symbol());
         if (!node.initial()) return;
 
-        // An initializer shorter than the array fills what it covers and
-        // leaves the rest zero, which is what shm_array_fill does.
         const int slot = reserve();
         evaluate(*node.initial());
         emitter_.storeSlot(Slot::Wide, slot);
@@ -791,8 +650,7 @@ void CodeGen::visit(Declare &node) {
     }
 
     if (!node.initial()) {
-        // A declaration with no initializer is the zero of its type, and the
-        // frame is not zeroed for us.
+
         if (isReal(node.declaredType())) emitter_.loadRealConstant(0.0);
         else emitter_.loadIntConstant(0);
     } else {
@@ -802,8 +660,6 @@ void CodeGen::visit(Declare &node) {
     markGlobalMade(*node.symbol());
 }
 
-// 'A[i] : v'. The container and the index are computed first and parked,
-// because evaluating the value may itself be a call.
 void CodeGen::assignElement(Index &target, Expr &value) {
     const Type *element = target.type();
     const int container = reserve();
@@ -836,22 +692,12 @@ void CodeGen::visit(Assign &node) {
         return;
     }
 
-    // Assigning an array into a variable that already holds one copies into
-    // the storage already there rather than rebinding it: extents are fixed
-    // at declaration, and an array may be shared by reference with a caller,
-    // so swapping the storage would resize it underneath them.
-    // The value stays in its slot until the last use of it, which is the
-    // fill below. Releasing it earlier hands the same slot to the next
-    // reservation, and the source is then overwritten by the size that was
-    // measured from it.
     const int slot = reserve();
     evaluate(*node.expr());
     emitter_.storeSlot(Slot::Wide, slot);
 
     if (node.creates()) {
-        // A name being made by this assignment has no storage to copy into.
-        // A literal or a joined string is already fresh; a plain variable is
-        // not, so it is copied - 't : s' makes a copy of s.
+
         if (dynamic_cast<ArrayLit *>(node.expr().get()) ||
             dynamic_cast<StrLit *>(node.expr().get()) ||
             dynamic_cast<Binary *>(node.expr().get())) {
@@ -860,7 +706,7 @@ void CodeGen::visit(Assign &node) {
             release();
             return;
         }
-        // Sized to the source, then filled from it.
+
         const int dims = reserve();
         emitter_.loadIntConstant(0);
         emitter_.setArg(Slot::Int, 1);
@@ -886,10 +732,6 @@ void CodeGen::visit(Assign &node) {
     release();
 }
 
-// The target is walked twice: once as a value and once as a destination.
-// Sharing one tree rather than copying it is what keeps an index expression
-// from having to be duplicated, and evaluating it twice is what the app's
-// interpreter does too.
 void CodeGen::visit(CompoundAssign &node) {
     const Type *type = node.target()->type();
     const int slot = reserve();
@@ -905,8 +747,7 @@ void CodeGen::visit(CompoundAssign &node) {
                                           type));
 
     if (Index *element = dynamic_cast<Index *>(node.target().get())) {
-        // Recomputing the container and the index is the same double
-        // evaluation the read side did.
+
         const int value = reserve();
         store(type, value);
         const int container = reserve();
@@ -928,7 +769,7 @@ void CodeGen::visit(CompoundAssign &node) {
 
     Var &target = static_cast<Var &>(*node.target());
     if (type->isArray()) {
-        // Appending fits the result into the storage the string already has.
+
         const int joined = reserve();
         emitter_.storeSlot(Slot::Wide, joined);
         emitter_.loadSlotIntoArg(Slot::Wide, joined, 1);
@@ -941,17 +782,10 @@ void CodeGen::visit(CompoundAssign &node) {
     writeSymbol(*target.symbol());
 }
 
-// Each item is printed followed by a single space; the newline is appended
-// once at the end. So '?' always leaves a trailing space before its newline,
-// and '??' leaves the line open for whatever prints next.
 void CodeGen::visit(Print &node) {
     for (ExprPtr &item : node.items()) {
         evaluate(*item);
-        // A directive rather than a value: visit(Precision) has just emitted
-        // the argument and the call to shm_print_places, so there is nothing
-        // left to print. It used to evaluate the item a second time here,
-        // which ran the argument twice - invisible for prec(7), a wrong answer
-        // for prec(f()) where f has an effect.
+
         if (dynamic_cast<Precision *>(item.get())) continue;
         const Type *type = item->type();
         if (type && type->isArray()) {
@@ -987,9 +821,6 @@ void CodeGen::visit(While &node) {
     evaluateCondition(*node.condition());
     emitter_.jumpIfZero(done);
 
-    // A 'continue' here goes back to the test, which is where the next pass
-    // begins. In a 'for' it goes to the step instead, because the step
-    // belongs to the loop rather than to the body.
     loops_.push_back(LoopLabels{done, top});
     generate(node.body());
     loops_.pop_back();
@@ -1003,11 +834,6 @@ void CodeGen::visit(For &node) {
     else generateIntLoop(node);
 }
 
-// The pass value is kept sixty-four bits wide and narrowed into the counter
-// each time round. Stepping a 32-bit counter can pass the end of its range
-// where the language says the loop should simply finish - 'for i :
-// 2147483646 to 2147483647 step 2' is the case - and a wide value has
-// nowhere to wrap.
 void CodeGen::generateIntLoop(For &node) {
     const int endSlot = node.hidden(For::EndSlot);
     const int stepSlot = node.hidden(For::StepSlot);
@@ -1037,7 +863,6 @@ void CodeGen::generateIntLoop(For &node) {
     emitter_.call("shm_loop_int_run");
     emitter_.jumpIfZero(done);
 
-    // The counter the program sees is the low half of the wide pass value.
     emitter_.loadSlot(Slot::Wide, passSlot);
     emitter_.storeSlot(Slot::Int, node.counter()->slot());
 
@@ -1055,9 +880,6 @@ void CodeGen::generateIntLoop(For &node) {
     emitter_.label(done);
 }
 
-// start + n * step, recomputed each pass rather than accumulated. That is
-// what the app does, and an accumulating loop drifts from it in the last
-// digits - which a program that prints its counter would show.
 void CodeGen::generateRealLoop(For &node) {
     const int startSlot = node.hidden(For::StartSlot);
     const int endSlot = node.hidden(For::EndSlot);
@@ -1120,4 +942,4 @@ void CodeGen::visit(Continue &) {
     emitter_.jump(loops_.back().continueTo);
 }
 
-}  // namespace shalimar
+}

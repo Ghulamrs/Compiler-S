@@ -32,9 +32,7 @@ void X86_64LinuxEmitter::endModule() {
         text_ += data_;
         closeConstSection();
     }
-    // A GNU-as object gets a non-executable stack only if it says so, and a
-    // missing note makes the whole program's stack executable on modern
-    // toolchains. Nothing here needs one.
+
     blank();
     raw("\t.section\t.note.GNU-stack,\"\",@progbits");
 }
@@ -57,4 +55,4 @@ void X86_64LinuxEmitter::label(int id) {
     raw(labelName(id) + ":");
 }
 
-}  // namespace shalimar
+}

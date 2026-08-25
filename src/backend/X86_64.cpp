@@ -8,7 +8,7 @@ namespace {
 const Reg systemVIntArgs[] = {Reg::Di, Reg::Si, Reg::Dx, Reg::Cx, Reg::R8, Reg::R9};
 const Reg microsoftIntArgs[] = {Reg::Cx, Reg::Dx, Reg::R8, Reg::R9};
 
-}  // namespace
+}
 
 const Abi &systemVAbi() {
     static const Abi abi = {systemVIntArgs, 6, 8, false, 0};
@@ -24,8 +24,6 @@ Reg X86_64Emitter::registerFor(Slot kind) {
     return kind == Slot::Real ? realAccumulator : accumulator;
 }
 
-// 'movsd' moves one double and carries its own width, so it takes no suffix;
-// 'mov' takes one from the operand width.
 const char *X86_64Emitter::moveFor(Slot kind) {
     return kind == Slot::Real ? "movsd" : "mov";
 }
@@ -44,9 +42,6 @@ Reg X86_64Emitter::argRegister(Slot kind, int index) const {
     return kind == Slot::Real ? sseArg(index) : abi_.intArgs[index];
 }
 
-// On entry rsp is eight past a multiple of sixteen; pushing rbp squares it,
-// so the reservation itself has to be a multiple of sixteen to leave it that
-// way for the next call.
 int X86_64Emitter::frameBytesFor(int slots) const {
     return (slots * 8 + abi_.shadowBytes + 15) & ~15;
 }
@@ -82,13 +77,10 @@ void X86_64Emitter::loadIntConstant(int32_t value) {
     instruction(spelling_.binary("mov", 4, spelling_.imm(value), spelling_.reg(accumulator, 4)));
 }
 
-// Built in an integer register and moved across, which costs one extra
-// instruction and saves a constant pool, a section and a relocation.
 void X86_64Emitter::loadRealConstant(double value) {
     instruction(spelling_.binary("mov", 8, spelling_.wideImm(bitsOf(value)),
                                  spelling_.reg(accumulator, 8)));
-    // No width suffix: 'movq' between a general register and an SSE one is
-    // its own mnemonic, and GNU would otherwise make it 'movqq'.
+
     instruction(spelling_.binary("movq", 0, spelling_.reg(accumulator, 8),
                                  spelling_.reg(realAccumulator, 8)));
 }
@@ -111,9 +103,7 @@ void X86_64Emitter::setArg(Slot kind, int index) {
     const Reg target = argRegister(kind, index);
     if (target == registerFor(kind)) return;
     const int width = widthFor(kind);
-    // Between two SSE registers it is 'movapd': 'movsd' would leave the upper
-    // half of the destination as it found it, which is a partial-register
-    // dependency and not what a move should mean.
+
     const char *mnemonic = kind == Slot::Real ? "movapd" : "mov";
     instruction(spelling_.binary(mnemonic, kind == Slot::Real ? 0 : width,
                                  spelling_.reg(registerFor(kind), width),
@@ -132,10 +122,6 @@ void X86_64Emitter::setOverflowBlock(int slot) {
                                       spelling_.reg(overflowPointer, 8)));
 }
 
-// Through r11 and xmm8, neither of which carries an argument in either
-// convention. At this point in a prologue every argument register is still
-// live, so borrowing one of them - or the accumulator - would destroy an
-// argument that has not been spilled yet.
 void X86_64Emitter::spillOverflowArgument(Slot kind, int index, int slot) {
     const int width = widthFor(kind);
     const Reg via = kind == Slot::Real ? Reg::Xmm8 : Reg::R11;
@@ -157,9 +143,6 @@ void X86_64Emitter::loadSlotAddress(int slot) {
     instruction(spelling_.loadAddress(slotOperand(slot, 8), spelling_.reg(accumulator, 8)));
 }
 
-// r10 is caller-saved in both conventions and is not an argument register in
-// either, so the pointer can be brought out of its slot without disturbing
-// anything the call is about to want.
 void X86_64Emitter::storeThroughPointer(Slot kind, int pointerSlot) {
     instruction(spelling_.binary("mov", 8, slotOperand(pointerSlot, 8),
                                  spelling_.reg(Reg::R10, 8)));
@@ -182,9 +165,6 @@ void X86_64Emitter::defineGlobals(int slots) {
     if (slots > 0) emitGlobalBlock(slots);
 }
 
-// r11 is caller-saved in both conventions and is not an argument register in
-// either, so the block's address can be taken without disturbing anything a
-// call is about to want.
 void X86_64Emitter::loadGlobal(Slot kind, int index) {
     instruction(spelling_.loadAddress(spelling_.dataReference(globalsLabel()),
                                       spelling_.reg(Reg::R11, 8)));
@@ -267,4 +247,4 @@ std::vector<std::string> X86_64Emitter::externals() const {
     return out;
 }
 
-}  // namespace shalimar
+}
