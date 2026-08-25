@@ -118,8 +118,91 @@ std::vector<std::string> Driver::shalimarFilesIn(const std::string &directory) {
     return found;
 }
 
+#ifdef _WIN32
+// ml64 and link are on PATH only inside a Developer Command Prompt, and an
+// editor launched from Explorer is not one. Found once, then every command
+// runs through a batch file that sources vcvars first - a file rather than a
+// prefix because cmd's quote handling cannot be relied on with several
+// quoted paths and an '&&'.
+static std::string findVcvars() {
+    char folder[MAX_PATH];
+    char temp[MAX_PATH];
+    if (GetTempPathA(MAX_PATH, folder) != 0 &&
+        GetTempFileNameA(folder, "shc", 0, temp) != 0) {
+        std::string ask =
+            "\"\"C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe\""
+            " -latest -products * -property installationPath > \"";
+        ask += temp; ask += "\"\"";
+        std::string root;
+        if (std::system(ask.c_str()) == 0) {
+            std::ifstream answer(temp);
+            std::getline(answer, root);
+        }
+        std::remove(temp);
+        while (!root.empty() && (root.back() == '\n' || root.back() == '\r')) root.pop_back();
+        if (!root.empty()) {
+            const std::string bat = root + "\\VC\\Auxiliary\\Build\\vcvars64.bat";
+            std::ifstream there(bat.c_str());
+            if (there) return bat;
+        }
+    }
+    static const char *const roots[] = {
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\",
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\"
+    };
+    static const char *const editions[] = {
+        "Community", "Professional", "Enterprise", "BuildTools"
+    };
+    for (std::size_t r = 0; r < sizeof roots / sizeof roots[0]; ++r) {
+        for (std::size_t e = 0; e < sizeof editions / sizeof editions[0]; ++e) {
+            const std::string bat = std::string(roots[r]) + editions[e] +
+                                    "\\VC\\Auxiliary\\Build\\vcvars64.bat";
+            std::ifstream there(bat.c_str());
+            if (there) return bat;
+        }
+    }
+    return std::string();
+}
+
+static std::string developerShell() {
+    const char *inside = std::getenv("VCToolsInstallDir");
+    if (inside != nullptr && inside[0] != '\0') return std::string();
+    static bool asked = false;
+    static std::string cached;
+    if (!asked) { asked = true; cached = findVcvars(); }
+    return cached;
+}
+#endif
+
 int Driver::shell(const std::string &command) {
+#ifdef _WIN32
+    // cmd /c strips the outer quotes of a command that begins and ends with
+    // one, so it is given a pair of its own to eat.
+    const std::string vcvars = developerShell();
+    if (vcvars.empty()) return std::system(("\"" + command + "\"").c_str());
+
+    char folder[MAX_PATH];
+    char script[MAX_PATH];
+    if (GetTempPathA(MAX_PATH, folder) == 0 ||
+        GetTempFileNameA(folder, "shc", 0, script) == 0) {
+        return std::system(("\"" + command + "\"").c_str());
+    }
+    std::string batch = script;
+    std::remove(batch.c_str());
+    batch += ".cmd";
+    {
+        std::ofstream out(batch.c_str());
+        if (!out) return std::system(("\"" + command + "\"").c_str());
+        out << "@echo off\n";
+        out << "call \"" << vcvars << "\" >nul 2>&1\n";
+        out << command << "\n";
+    }
+    const int rc = std::system(("\"" + batch + "\"").c_str());
+    std::remove(batch.c_str());
+    return rc;
+#else
     return std::system(command.c_str());
+#endif
 }
 
 static std::string shellQuote(const std::string &path) {
