@@ -1,0 +1,11 @@
+// The other half: with nothing claiming the names, they are the builtins
+// and the two constants, exactly as before.
+fun <> = main() {
+  int n
+  n : 3
+  ? sqrt(16.0)
+  ? max(n, 7)
+  ? pi
+  ? e
+  return
+}

@@ -1,0 +1,34 @@
+// A name the program defines is the program's, and a builtin is what the
+// name means when nobody has claimed it.
+//
+// This replaces err_builtin_name and err_constant_write, which asserted the
+// opposite: that defining 'sqrt' and assigning to 'pi' were errors. They
+// were, and the rule cost every program the words max, min, len, abs and
+// the single letter e - which are the names people reach for first.
+//
+// The rule now is C's, arrived at without headers to state it: sqrt is the
+// library's until a file declares its own.
+fun <real> = sqrt(x: real) {
+  return x + 100.0
+}
+
+fun <int> = max(a: int, b: int) {
+  return a * b
+}
+
+fun <> = main() {
+  real pi
+  int e
+  int n
+
+  ? sqrt(4.0)
+
+  n : 3
+  ? max(n, 7)
+
+  pi : 1.5
+  e : 9
+  ? pi e
+
+  return
+}

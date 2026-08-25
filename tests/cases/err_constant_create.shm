@@ -1,0 +1,14 @@
+// A constant may be shadowed, but only on purpose.
+//
+// Shalimar makes a name on first write, so 'pi : 3' with no declaration
+// would leave '? pi' meaning 3.14159 above that line and 3 below it - one
+// name with two meanings in one function. That is the hazard the language
+// document named when it made pi and e read-only, and it is the half worth
+// keeping. Declaring 'real pi' first says the shadowing was meant, and
+// cases/shadowing.shm holds that.
+fun <> = main() {
+  ? pi
+  pi : 3.0
+  ? pi
+  return
+}
