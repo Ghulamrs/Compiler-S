@@ -135,3 +135,39 @@ without pausing.
 That is why `tests/load/nested_calls.shm` stops at twenty: the limit is the
 oracle's, not this compiler's. It is a defect in the app rather than a
 difference in the language, and it has not been reported upstream from here.
+
+---
+
+## 5. Something this compiler does that the app cannot
+
+**A program that declares a foreign function has no interpreter.**
+
+```
+uses <real> = c_total(a[]: real)
+```
+
+says that something outside this program provides `c_total`, and `shc` links a
+library that does — `--with=libmine.a`. The app has no link step and never
+will: it interprets a source file, and there is nowhere for a `.a` to go.
+
+So this is a divergence that cannot be closed, only stated. Both readers parse
+the declaration — they must agree on what a program *is* — and the app refuses
+it by name rather than mangling the diagnostic:
+
+```
+Error: line 1: 'c_total' comes from a library - shc can build this program,
+                the app cannot link one
+```
+
+It reads the head far enough to say **which** function before refusing, because
+"unsupported syntax" would send a reader looking at their spelling.
+
+**This is the only construct in the language with that property.** Everything
+else in `SHALIMAR_LANGUAGE.md` runs both ways; a foreign declaration is the one
+thing whose meaning is supplied at link time, and the app has no link time. It
+is written here rather than in the specification because the specification
+describes the language, and the language is not what differs — the two hosts
+are.
+
+`uses sin, cos` is untouched by any of this: the app has those functions
+already, so it reads that form and carries on.

@@ -483,7 +483,9 @@ void CodeGen::generateCall(Call &node) {
     }
     if (overflowCount > 0) emitter_.setOverflowBlock(blockBase);
 
-    emitter_.call(mangle(proto.name));
+    // A foreign function keeps the name its own compiler gave it. mangle()
+    // would make it shmf_, which marks a function this compiler wrote.
+    emitter_.call(proto.isForeign ? proto.name : mangle(proto.name));
 
     for (size_t i = 0; i < count; ++i) release();
     for (int i = 0; i < overflowCount; ++i) release();

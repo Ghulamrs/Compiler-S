@@ -12,3 +12,4 @@ tests/out/
 *.xcodeproj/project.xcworkspace/
 tests/out-examples/
 tests/out-abi/
+tests/out-foreign/

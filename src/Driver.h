@@ -18,6 +18,9 @@ private:
     std::string output_;
     std::string targetName_;
     std::string runtimeObject_;
+    // Libraries named with --with=, in the order given, holding what `uses
+    // <...> = f(...)` declared. See docs/FOREIGN.md.
+    std::vector<std::string> libraries_;
     std::string program_;
     bool assemblyOnly_ = false;
     bool objectOnly_ = false;

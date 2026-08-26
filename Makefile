@@ -131,9 +131,12 @@ test: all
 # the compiling where it is there, because it is stricter than the host's and
 # it is the compiler a user of these tools already has.
 	SHC="$(abspath $(SHC))" ./tests/abi.sh
+# And the foreign declaration, which is not in tests/cases because that suite
+# asserts shc and the app agree - and on this one construct they cannot.
+	SHC="$(abspath $(SHC))" ./tests/foreign.sh
 
 clean:
 	rm -rf $(BUILD) $(SHC) $(LIBDIR)
-	rm -rf tests/out tests/out-examples tests/out-abi
+	rm -rf tests/out tests/out-examples tests/out-abi tests/out-foreign
 
 .PHONY: all test clean

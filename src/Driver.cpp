@@ -41,6 +41,8 @@ void Driver::usage() const {
         "  -c                 stop after assembling\n"
         "  --target=<name>    arm64-darwin | x86_64-linux | x86_64-windows\n"
         "  --runtime=<path>   the runtime archive to link against\n"
+        "  --with=<path>      a library holding what 'uses' declared;\n"
+        "                     repeatable, linked in the order given\n"
         "  --no-search        do not look in the other files beside this one\n"
         "  --debug            link the runtime a debugger can stop, which\n"
         "                     changes nothing about what is compiled\n"
@@ -277,6 +279,16 @@ bool Driver::parseArguments(const std::vector<std::string> &arguments) {
             targetName_ = a.substr(9);
         } else if (a.compare(0, 10, "--runtime=") == 0) {
             runtimeObject_ = a.substr(10);
+        } else if (a.compare(0, 7, "--with=") == 0) {
+            // A library holding what `uses <...> = f(...)` declared. Named on
+            // the command line rather than in the source, for the reason C
+            // splits a header from -l: the program says what it calls, the
+            // build says where that lives. The same source then serves a
+            // machine where the library sits somewhere else.
+            //
+            // Repeatable, and given to the linker in the order written, which
+            // is the order a linker cares about.
+            libraries_.push_back(a.substr(7));
         } else if (a == "--no-search") {
             search_ = false;
         } else if (a == "--debug") {
@@ -421,6 +433,23 @@ int Driver::run(const std::vector<std::string> &arguments) {
     }
     if (!sound) return 1;
 
+    // **A declaration without a library is a link failure this compiler can
+    // see coming.** `uses <real> = f(...)` says something else will provide
+    // f; if nothing was named with --with= and we are the ones linking, the
+    // linker will say "undefined symbol _f", which is true and names neither
+    // the declaration nor the cure. Said here instead, once, before the link.
+    //
+    // Only when linking: -c and -S produce an object or assembly that somebody
+    // else will link, and they are entitled to bring the library themselves.
+    if (!program->foreign().empty() && libraries_.empty() &&
+        !objectOnly_ && !assemblyOnly_) {
+        std::cerr << "shc: '" << program->foreign()[0].name
+                  << "' is declared with 'uses' and comes from a library, but no\n"
+                     "     library was named. Add --with=<path> - see"
+                     " docs/FOREIGN.md.\n";
+        return 1;
+    }
+
     std::unique_ptr<Emitter> emitter = target->newEmitter();
     CodeGen generator(*emitter);
     generator.run(*program, input_, names);
@@ -468,7 +497,10 @@ int Driver::run(const std::vector<std::string> &arguments) {
     if (objectOnly_) return 0;
 
     command = "link /nologo /subsystem:console /out:" + shellQuote(output_) + " " +
-              shellQuote(objectPath) + " " + shellQuote(runtimeObject_);
+              shellQuote(objectPath);
+    for (std::size_t i = 0; i < libraries_.size(); ++i)
+        command += " " + shellQuote(libraries_[i]);
+    command += " " + shellQuote(runtimeObject_);
     status = shell(command);
 
     std::remove(objectPath.c_str());
@@ -480,10 +512,10 @@ int Driver::run(const std::vector<std::string> &arguments) {
     return 0;
 #else
     std::string command;
-    if (objectOnly_)
+    if (objectOnly_) {
         command = "c++ -c -o " + shellQuote(named ? output_ : output_ + ".o") + " " +
                   shellQuote(assemblyPath);
-    else
+    } else {
         // **-lm, named rather than relied upon.** A borrowed `sin` is now a
         // direct call to libm's own symbol, so the program needs libm whatever
         // the runtime archive happens to reference. It is inside libSystem on
@@ -492,8 +524,13 @@ int Driver::run(const std::vector<std::string> &arguments) {
         // "undefined reference to sin". Passing it always is one word and
         // removes a fault that would pass here and on the build box and fail
         // on somebody else's machine. See docs/FOREIGN.md.
-        command = "c++ -o " + shellQuote(output_) + " " + shellQuote(assemblyPath) + " " +
-                  shellQuote(runtimeObject_) + " -lm";
+        command = "c++ -o " + shellQuote(output_) + " " + shellQuote(assemblyPath);
+        // Before the runtime, because a library may call into it and a linker
+        // reads left to right.
+        for (std::size_t i = 0; i < libraries_.size(); ++i)
+            command += " " + shellQuote(libraries_[i]);
+        command += " " + shellQuote(runtimeObject_) + " -lm";
+    }
 
     const int status = shell(command);
     std::remove(assemblyPath.c_str());
