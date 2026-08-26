@@ -1,0 +1,19 @@
+// `uses` in global space: the clause parses, several names to a line, and
+// several clauses to a file. Nothing is gated on it yet - that is the next
+// step - so this asks only what it says: that the grammar takes it and that
+// the program still means what it meant.
+//
+// It sits beside a global on purpose. `uses` is not a declaration and the two
+// interleave freely, which is the sort of thing a parser gets wrong once.
+uses sin, cos
+real half : 0.5
+uses tan
+
+fun <real> = both(x: real) {
+  return sin(x) + cos(x)
+}
+
+fun <> = main() {
+  ? both(half) tan(half)
+  return
+}
