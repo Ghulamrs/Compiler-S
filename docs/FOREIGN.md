@@ -178,3 +178,39 @@ all and the link line will need `-lm` explicitly.
 That is a fault that passes on the Mac and fails on the box, which is the
 shape this repository has been caught by before. Test the Linux link before
 believing the Mac one.
+
+
+## Built, and the two things that were not on this page
+
+Phases as written: `uses` parses, then gates, then the table points at libm.
+Green on all three machines. Two faults turned up that this document had not
+foreseen, and both are the kind that only appear on one machine.
+
+**`fabs` is an x87 instruction.** Borrowing `abs` means calling libm's `fabs`,
+and `FABS` is a mnemonic ml64 has known since the 8087 - so `EXTRN fabs:PROC`
+is read as an instruction and answers `A2008: syntax error : fabs`. It
+assembles cleanly on both Unix targets and fails only under MASM.
+`OPTION NOKEYWORD:<fabs>` is MASM's own answer, emitted only in a module that
+actually calls it. Safe module-wide because this compiler emits no x87 at all -
+every float goes through SSE.
+
+**Five of the twenty are not library calls and must not become them.** The
+redirection looked like a mechanical rename and is not:
+
+- `shm_fn_abs_int` traps on `INT_MIN` rather than negating it; C's `abs()` is
+  undefined there, so it is a different function that shares a name.
+- `shm_fn_max_real` and `shm_fn_min_real` are `a > b ? a : b`, which propagates
+  NaN. `fmax`/`fmin` return the non-NaN operand instead - a real difference in
+  answers, not a spelling.
+- `shm_fn_max_int` and `shm_fn_min_int` have no C library equivalent at all.
+
+So seventeen wrappers went and five stayed. `shmrt-arm64-darwin.a` fell from
+46,336 bytes to 44,456, and the borrowable set can now grow without it growing
+at all.
+
+**`-lm` is named rather than relied upon.** After the wrappers went, the
+archive references libm only through `std::fmod` and `std::pow`, which the `%`
+and `^` operators still use. If those ever move, nothing in the archive would
+pull libm in and the flag becomes the only thing that does. It is a no-op on a
+Mac and on glibc 2.34 and later, and the difference between linking and not on
+anything older.

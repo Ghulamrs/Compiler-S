@@ -484,8 +484,16 @@ int Driver::run(const std::vector<std::string> &arguments) {
         command = "c++ -c -o " + shellQuote(named ? output_ : output_ + ".o") + " " +
                   shellQuote(assemblyPath);
     else
+        // **-lm, named rather than relied upon.** A borrowed `sin` is now a
+        // direct call to libm's own symbol, so the program needs libm whatever
+        // the runtime archive happens to reference. It is inside libSystem on
+        // a Mac and inside libc on glibc 2.34 and later, where the flag is a
+        // no-op; on anything older it is the difference between linking and
+        // "undefined reference to sin". Passing it always is one word and
+        // removes a fault that would pass here and on the build box and fail
+        // on somebody else's machine. See docs/FOREIGN.md.
         command = "c++ -o " + shellQuote(output_) + " " + shellQuote(assemblyPath) + " " +
-                  shellQuote(runtimeObject_);
+                  shellQuote(runtimeObject_) + " -lm";
 
     const int status = shell(command);
     std::remove(assemblyPath.c_str());

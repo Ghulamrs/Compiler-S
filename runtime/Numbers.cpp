@@ -152,29 +152,20 @@ int32_t shm_loop_real_run(double value, double end, double step) {
     return value >= end ? 1 : 0;
 }
 
-double shm_fn_sqrt(double x)  { return std::sqrt(x); }
-double shm_fn_log(double x)   { return std::log(x); }
-double shm_fn_exp(double x)   { return std::exp(x); }
-double shm_fn_hypot(double x, double y) { return std::hypot(x, y); }
-double shm_fn_sin(double x)   { return std::sin(x); }
-double shm_fn_cos(double x)   { return std::cos(x); }
-double shm_fn_tan(double x)   { return std::tan(x); }
-double shm_fn_asin(double x)  { return std::asin(x); }
-double shm_fn_acos(double x)  { return std::acos(x); }
-double shm_fn_atan(double x)  { return std::atan(x); }
-double shm_fn_atan2(double y, double x) { return std::atan2(y, x); }
-double shm_fn_pow(double x, double y)   { return std::pow(x, y); }
-double shm_fn_round(double x) { return std::round(x); }
-double shm_fn_ceil(double x)  { return std::ceil(x); }
-double shm_fn_floor(double x) { return std::floor(x); }
-double shm_fn_trunc(double x) { return std::trunc(x); }
 
-double shm_fn_abs_real(double x) { return std::fabs(x); }
 
 int32_t shm_fn_abs_int(int32_t x) { return shm::narrow(-static_cast<int64_t>(x) < 0
                                                        ? static_cast<int64_t>(x)
                                                        : -static_cast<int64_t>(x), "abs"); }
 
+// **These forward to nothing any more.** shc calls sin, sqrt, fabs and their
+// neighbours directly now - see ../src/Builtin.cpp and ../docs/FOREIGN.md - so
+// the seventeen one-line wrappers that used to stand here are gone and the
+// archive is smaller for it. Growing the borrowable set costs it nothing.
+//
+// What remains is here because it is NOT the C function of the same name:
+// abs_int traps where C's abs() is undefined, and max/min propagate NaN where
+// fmax/fmin swallow it. The C library has no integer max or min at all.
 double  shm_fn_max_real(double a, double b) { return a > b ? a : b; }
 double  shm_fn_min_real(double a, double b) { return a < b ? a : b; }
 int32_t shm_fn_max_int(int32_t a, int32_t b) { return a > b ? a : b; }
