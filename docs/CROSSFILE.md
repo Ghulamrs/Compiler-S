@@ -9,6 +9,8 @@ What that buys is reuse without ceremony:
 
 ```
 // geometry.shl - a program until its main() was renamed
+uses abs
+
 real tolerance : 1e-9
 
 fun <real> = area(w: real, h: real) { return w * h }
@@ -42,6 +44,11 @@ whole of it, because a function called `main` is the one name nothing can
 ask for.
 
 ## The rules
+
+**0. A file borrows for itself.** `geometry.shl` says `uses abs` because
+`geometry.shl` calls it; `main.shl` says nothing, and does not need to know what
+the file it calls into reaches for. See `FOREIGN.md` - this is the same rule as
+the one below, applied to the library rather than to globals.
 
 **1. Only functions are looked for.** A global belongs to the file that
 declares it. A function that is brought in brings its own file's globals with

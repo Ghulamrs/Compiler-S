@@ -1,5 +1,8 @@
 // A string built a piece at a time in a loop, joined, compared and indexed -
 // every text operation the language has, run enough times to matter.
+
+uses len
+
 fun <> = main() {
   char s[64] : ""
   for i < 20 {

@@ -1,5 +1,8 @@
 // The other half: with nothing claiming the names, they are the builtins
 // and the two constants, exactly as before.
+
+uses sqrt, max
+
 fun <> = main() {
   int n
   n : 3

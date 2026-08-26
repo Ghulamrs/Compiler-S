@@ -99,7 +99,21 @@ bool Resolver::resolve(Unit &main, std::vector<Unit> &others) {
         const std::string name = wanted.back();
         wanted.pop_back();
 
-        if (have.count(name) || findBuiltin(name) >= 0) continue;
+        // A borrowed library function needs no file found for it. An
+        // unborrowed one is just a name, and the search must go looking -
+        // otherwise `sin` without a `uses` would be quietly satisfied here
+        // and then fail far away in the checker.
+        if (have.count(name)) continue;
+        // A library name is satisfied here if ANY unit in play borrows it -
+        // this file, or one whose function has been or will be pulled in. The
+        // checker still refuses a call the calling file did not borrow; this
+        // only stops the search going off to look for a file called `abs`.
+        if (findBuiltin(name) >= 0) {
+            bool anyone = main.program->borrows(name);
+            for (std::size_t u = 0; !anyone && u < others.size(); ++u)
+                if (others[u].program) anyone = others[u].program->borrows(name);
+            if (anyone) continue;
+        }
 
         if (name == "main") continue;
 
@@ -144,6 +158,22 @@ bool Resolver::resolve(Unit &main, std::vector<Unit> &others) {
             if (std::find(mentions.begin(), mentions.end(), global) == mentions.end())
                 continue;
             main.program->addGlobal(StmtPtr(g.release()));
+        }
+
+        // **A function brings its own file's borrows, as it brings its own
+        // file's globals.** `uses` is per file, so a file pulled into somebody
+        // else's program must arrive with what it reaches for - the caller
+        // cannot be expected to know, and should not have to say. Same rule as
+        // the globals above, applied to the library; see docs/CROSSFILE.md
+        // rule 0 and docs/FOREIGN.md.
+        //
+        // All of them, not only the ones this function calls. A borrow emits
+        // nothing and an unused one is ignored, so narrowing it would cost a
+        // walk and buy nothing.
+        for (std::size_t b = 0; b < from.program->borrowed().size(); ++b) {
+            const Program::Borrowed &borrow = from.program->borrowed()[b];
+            if (!main.program->borrows(borrow.name))
+                main.program->borrow(borrow.name, borrow.line);
         }
 
         Names calls;

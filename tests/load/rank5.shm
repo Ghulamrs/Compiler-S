@@ -1,5 +1,8 @@
 // A rank-five array: the runtime builds four levels of references to reach the
 // numbers, and .dim(n) walks back down them.
+
+uses len
+
 fun <> = main() {
   int a[3][4][5][6][7]
   ? a.row a.col a.dim(2) a.dim(3) a.dim(4) a.dim(5)

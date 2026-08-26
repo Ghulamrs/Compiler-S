@@ -1,6 +1,9 @@
 // 7.3 creates a target that does not exist with the output's type. 5.2 makes
 // a conversion at a declared destination automatic and silent, and a target
 // that already exists is one.
+
+uses sqrt
+
 fun <real> = half(n: int) {
   return n / 2.
 }

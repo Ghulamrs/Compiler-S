@@ -1,5 +1,8 @@
 // geometry.shl - was a program of its own; its main is now called demo,
 // which is the whole of what it took to make it a library.
+
+uses abs, sqrt
+
 real tolerance : 1e-9
 
 fun <real> = area(w: real, h: real) {

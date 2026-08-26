@@ -1,6 +1,9 @@
 // Every built-in over a range of arguments, printed at full precision. This is
 // where a target that got an argument register wrong would show it, because
 // each of these is a call with one or two reals.
+
+uses abs, sqrt, log, exp, hypot, sin, cos, tan, asin, acos, atan, atan2, pow, round, ceil, floor, trunc, max, min
+
 fun <> = main() {
   real x : 0.0
   ? prec(12)
