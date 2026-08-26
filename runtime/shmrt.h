@@ -2,7 +2,24 @@
 #ifndef SHALIMAR_RUNTIME_H
 #define SHALIMAR_RUNTIME_H
 
+/* **Readable from C89, because cc1 is a C89 compiler and this is cc1's own
+   project.** <stdint.h> is C99; asking for it unconditionally meant the one C
+   compiler written alongside this runtime could not compile a single line
+   against it - which was true until 2026-08-26 and nobody had tried.
+
+   The two widths are all this header uses. Where <stdint.h> exists it is the
+   authority; where it does not, C89's own types cover both models: int is 32
+   bits on every target here, and the 64-bit type follows the data model. */
+#if defined(__cplusplus) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L)
 #include <stdint.h>
+#else
+typedef int int32_t;
+#if defined(_WIN64) || defined(__llp64__)
+typedef long long int64_t;      /* LLP64: long is 32 bits */
+#else
+typedef long int64_t;           /* LP64 */
+#endif
+#endif
 
 #ifdef __cplusplus
 extern "C" {
