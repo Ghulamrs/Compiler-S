@@ -12,15 +12,18 @@
 //
 // Library: Compiler-C/examples/shalimar-library (text.c). Build it there.
 
-// `len` is borrowed from the table like any other library function - a
-// program that borrows nothing gets nothing, whichever side it comes from.
-uses len
+// **Both forms of `uses`, side by side.** These come from the table shc
+// carries - the C standard library, whose signatures it already knows - and
+// the ones below come from a library the link is given. Nothing at a call site
+// says which is which, and nothing needs to.
+uses len, fmod, sinh, cosh
 
 uses <int> = text_length(s[]: char)
 uses <int> = text_count(s[]: char, code: int)
 uses <int> = text_same(a[]: char, b[]: char)
 uses <> = text_upper(s[]: char)
 uses <real> = text_fraction(s[]: char, code: int)
+uses <> = text_shift(s[]: char, by: int)
 
 fun <> = main() {
   char greeting[14] : "hello, sailor"
@@ -39,4 +42,24 @@ fun <> = main() {
 
   text_upper(greeting)
   ? "upper-cased         " greeting
+
+  // **fmod, feeding a library function.** A rotation of 42 is a rotation of
+  // 16: wrapping it is exactly what a modulo is for, and it happens on this
+  // side so that text_shift can trust what it is given. `%` would do the same
+  // thing and need no borrow - fmod is here because a program that would
+  // rather name the operation may.
+  real turn : fmod(42.0, 26.0)
+  ? "42 letters is really" turn
+  text_shift(greeting, int(turn))
+  ? "rotated             " greeting
+  text_shift(greeting, 26 - int(turn))
+  ? "and back again      " greeting
+
+  // **sinh and cosh have nothing to do with text**, and are here for one
+  // honest reason: to show a borrowed function being checked rather than
+  // decorated. cosh(x)^2 - sinh(x)^2 is 1 for every x, so if the two were
+  // swapped, or either went to the wrong symbol, this line would stop saying
+  // 1.0000000 - which reading the numbers themselves would never reveal.
+  real f : text_fraction(greeting, 76)
+  ? "cosh^2 - sinh^2     " cosh(f)*cosh(f) - sinh(f)*sinh(f)
 }
