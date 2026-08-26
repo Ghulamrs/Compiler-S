@@ -32,8 +32,22 @@
 
 namespace shalimar {
 
+// **1.2 is the first version this compiler has had a number for.** It had
+// none until 2026-08-26 - it was built, relayed and run without one, and that
+// works until somebody has two copies and needs to say which is which.
+//
+// It is 1.2 rather than 1.0 because it is numbered alongside RStudio, which
+// drives it: an editor at 1.2 driving a compiler at 1.0 invites the question
+// of which pairs with which, and there is only ever one answer here. The
+// releases they share are what the number tracks - 1.2 being `uses`, the
+// borrowed library and the foreign declaration.
+const char *shcVersion() { return "1.2"; }
+
+
 void Driver::usage() const {
     std::cerr <<
+        "shc " << shcVersion() << " - the Shalimar compiler\n"
+        "\n"
         "usage: shc [options] file.shm\n"
         "\n"
         "  -o <path>          where the result goes\n"
@@ -44,6 +58,7 @@ void Driver::usage() const {
         "  --with=<path>      a library holding what 'uses' declared;\n"
         "                     repeatable, linked in the order given\n"
         "  --no-search        do not look in the other files beside this one\n"
+        "  --version          say which shc this is, and stop\n"
         "  --debug            link the runtime a debugger can stop, which\n"
         "                     changes nothing about what is compiled\n"
         "\n"
@@ -293,8 +308,13 @@ bool Driver::parseArguments(const std::vector<std::string> &arguments) {
             search_ = false;
         } else if (a == "--debug") {
             debug_ = true;
+        } else if (a == "--version") {
+            std::cout << "shc " << shcVersion() << "\n";
+            answered_ = true;
+            return false;
         } else if (a == "-h" || a == "--help") {
             usage();
+            answered_ = true;
             return false;
         } else if (!a.empty() && a[0] == '-') {
             std::cerr << "shc: unknown option " << a << "\n";
@@ -316,7 +336,11 @@ bool Driver::parseArguments(const std::vector<std::string> &arguments) {
 
 int Driver::run(const std::vector<std::string> &arguments) {
     program_ = arguments.empty() ? "shc" : arguments[0];
-    if (!parseArguments(arguments)) return 2;
+    // **A question answered is not a failure.** --version and --help are
+    // requests this program can satisfy, so they leave with 0; a bad argument
+    // leaves with 2. Both used to be 2, which is why a script asking three
+    // compilers their versions stopped at the second one.
+    if (!parseArguments(arguments)) return answered_ ? 0 : 2;
 
     std::unique_ptr<Target> target = Target::forName(targetName_);
     if (!target) {

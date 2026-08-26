@@ -21,6 +21,10 @@ private:
     // Libraries named with --with=, in the order given, holding what `uses
     // <...> = f(...)` declared. See docs/FOREIGN.md.
     std::vector<std::string> libraries_;
+
+    // Set when --version or --help was answered, so run() can leave with 0
+    // rather than reporting a usage error the caller did not make.
+    bool answered_ = false;
     std::string program_;
     bool assemblyOnly_ = false;
     bool objectOnly_ = false;
