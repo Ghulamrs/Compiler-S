@@ -1,0 +1,30 @@
+// The whole chain on one line, which is how it gets written when it is short:
+//
+//     if x=1 {} else if x=2 {} else {}
+//
+// Shalimar is line-oriented in places - `?` must start its line - so "it parses
+// across lines" and "it parses on one" are two questions, and only the second
+// one is asked here. No spaces around `=` either, and empty blocks, because
+// both are legal and both are how a person actually types this.
+fun <int> = pick(x: int) {
+  int r
+  r : 0
+  if x=1 { r : 10 } else if x=2 { r : 20 } else if x=3 { r : 30 } else { r : 99 }
+  return r
+}
+
+// An empty chain still has to parse, and still has to fall through correctly.
+fun <int> = empty(x: int) {
+  int r
+  r : 7
+  if x=1 {} else if x=2 {} else {}
+  return r
+}
+
+fun <> = main() {
+  int i
+  for i : 0 to 4 {
+    ? i pick(i) empty(i)
+  }
+  return
+}
