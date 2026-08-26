@@ -23,7 +23,19 @@ SRC="$SHALIMAR/Shalimar"
 [ -f "$SRC/Interpreter.swift" ] || { echo "set SHALIMAR to the app checkout" >&2; exit 2; }
 
 REF="${TMPDIR:-/tmp}/shalimar-reference"
-if [ ! -x "$REF" ] || [ "$SRC/Interpreter.swift" -nt "$REF" ]; then
+
+# Rebuild when ANY of the five sources is newer, not just Interpreter.swift.
+# That check cost a wrong recording: `else if` was taught to Parse.swift, the
+# reference binary was left alone because Interpreter.swift had not moved, and
+# the suite recorded the old parser's error message as the expected answer.
+# A stale oracle does not fail - it certifies, which is worse.
+stale=0
+[ -x "$REF" ] || stale=1
+for f in TokenKind Node Parse Check Interpreter; do
+    [ "$SRC/$f.swift" -nt "$REF" ] && stale=1
+done
+[ "$SHALIMAR/Tests/harness/main.swift" -nt "$REF" ] && stale=1
+if [ "$stale" = 1 ]; then
     echo "building the reference interpreter..."
     swiftc -O "$SRC/TokenKind.swift" "$SRC/Node.swift" "$SRC/Parse.swift" \
            "$SRC/Check.swift" "$SRC/Interpreter.swift" \

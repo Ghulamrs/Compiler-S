@@ -1,0 +1,24 @@
+// `else if` is `elseif`. Both spellings in one chain, and a bare `else` after
+// them, because the risk in reading two words as one keyword is taking the
+// `if` when it is not there and leaving a plain `else` without its block.
+fun <> = main() {
+  int x
+  for x : 0 to 4 {
+    if x = 0 {
+      ? "zero"
+    }
+    else if x = 1 {
+      ? "one"
+    }
+    elseif x = 2 {
+      ? "two"
+    }
+    else if x = 3 {
+      ? "three"
+    }
+    else {
+      ? "many"
+    }
+  }
+  return
+}
