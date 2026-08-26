@@ -1,0 +1,23 @@
+// The seven added on 2026-08-26, each of which is a table row and nothing
+// else: the symbol is libm's, so no wrapper was written and the runtime
+// archive did not grow by a byte.
+//
+// They are C99 rather than C89 - log2, cbrt and the hyperbolics postdate the
+// standard Compiler-C targets - which does not matter here, because this is a
+// call into the platform's libm and not a C program. All three machines have
+// them.
+uses fmod, sinh, cosh, tanh, log10, log2, cbrt
+
+fun <> = main() {
+  real x : 2.0
+
+  // Exact answers where there are exact answers, so a wrong one is obvious
+  // rather than a digit adrift.
+  ? log10(1000.0) log2(1024.0) cbrt(27.0)
+  ? fmod(7.5, 2.0) fmod(0.0 - 7.5, 2.0)
+
+  // The identity cosh^2 - sinh^2 = 1, which catches a pair swapped for each
+  // other in a way that reading the numbers would not.
+  ? cosh(x)*cosh(x) - sinh(x)*sinh(x)
+  ? tanh(0.0) tanh(x)
+}
