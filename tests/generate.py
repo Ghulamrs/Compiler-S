@@ -96,10 +96,10 @@ checker's estimate disagree.
 
     n = 200
     write("if_chain", """
-Two hundred elseif branches in one function: a label apiece, and a jump from
+Two hundred `else if` branches in one function: a label apiece, and a jump from
 each to the same end.
 """, "fun <int> = pick(n: int) {\n  if n = 0 {\n    return 0\n  }" +
-        "".join(" elseif n = %d {\n    return %d\n  }" % (i, i * i)
+        "".join(" else if n = %d {\n    return %d\n  }" % (i, i * i)
                 for i in range(1, n)) +
         " else {\n    return -1\n  }\n}\n"
         "fun <> = main() {\n  ? pick(7) pick(150) pick(999)\n}\n")

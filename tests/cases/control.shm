@@ -47,7 +47,7 @@ fun <> = main() {
   n : 7
   if n < 5 {
     ? 1
-  } elseif n < 10 {
+  } else if n < 10 {
     ? 2
   } else {
     ? 3

@@ -1,0 +1,31 @@
+// `elseif` is not a keyword and not a reserved name: it is an ordinary
+// identifier, and this uses it as one.
+//
+// The case is here because "dropped" has two meanings and only one of them is
+// what happened. A word can stop being part of the grammar while still being
+// held back from programs - which is what this language did for exactly one
+// afternoon - and the difference is invisible until something tries to use the
+// name. So something does.
+fun <int> = elseif(else_v: int) {
+  int elseif : 0
+
+  if else_v = 1 {
+    elseif : 10
+  }
+  else if else_v = 2 {
+    elseif : 20
+  }
+  else {
+    elseif : 99
+  }
+  return elseif
+}
+
+fun <> = main() {
+  int i
+
+  for i : 1 to 3 {
+    ? i elseif(i)
+  }
+  return
+}

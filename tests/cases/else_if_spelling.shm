@@ -1,6 +1,9 @@
-// `else if` is `elseif`. Both spellings in one chain, and a bare `else` after
-// them, because the risk in reading two words as one keyword is taking the
-// `if` when it is not there and leaving a plain `else` without its block.
+// A long chain of `else if`, with a bare `else` at the end of it.
+//
+// The risk in reading two words as one branch is taking the `if` when it is
+// not there: a plain `else` must still fall through to its own block rather
+// than being swallowed. Four branches then an `else` asks that at length, not
+// just once.
 fun <> = main() {
   int x
   for x : 0 to 4 {
@@ -10,7 +13,7 @@ fun <> = main() {
     else if x = 1 {
       ? "one"
     }
-    elseif x = 2 {
+    else if x = 2 {
       ? "two"
     }
     else if x = 3 {
