@@ -120,8 +120,14 @@ $(DEBUG_RUNTIME): $(DEBUG_RUNTIME_OBJECTS)
 
 test: all
 	SHC="$(abspath $(SHC))" ./tests/run.sh
+# The examples too, because they were not built by anything and rotted: eight
+# of the twelve stopped compiling when `uses` landed and nothing said so. They
+# are documentation people are pointed at, so a broken one is worse than a
+# broken case.
+	SHC="$(abspath $(SHC))" ./tests/examples.sh
 
 clean:
 	rm -rf $(BUILD) $(SHC) $(LIBDIR)
+	rm -rf tests/out tests/out-examples
 
 .PHONY: all test clean

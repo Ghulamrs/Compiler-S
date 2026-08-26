@@ -10,3 +10,4 @@ tests/out/
 # Xcode's per-user state, which is not the project
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcworkspace/
+tests/out-examples/
