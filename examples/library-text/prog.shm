@@ -1,0 +1,42 @@
+// Text across the boundary: char[] in, int and real out, and a char[] written
+// through.
+//
+// Shalimar has no string type - text is a char[], and a char is a 32-bit code
+// rather than a byte. So the C side walks codes; there is no way to hand one
+// to strlen, and no way to declare a function that took a `char *` either,
+// because Shalimar has no pointer type.
+//
+// **A literal carries a terminator.** `char w[6] : "hello"` is six elements,
+// five codes and a nought - so the array's extent is not the text's length.
+// text_length is the difference, and the reason it exists.
+//
+// Library: Compiler-C/examples/shalimar-library (text.c). Build it there.
+
+// `len` is borrowed from the table like any other library function - a
+// program that borrows nothing gets nothing, whichever side it comes from.
+uses len
+
+uses <int> = text_length(s[]: char)
+uses <int> = text_count(s[]: char, code: int)
+uses <int> = text_same(a[]: char, b[]: char)
+uses <> = text_upper(s[]: char)
+uses <real> = text_fraction(s[]: char, code: int)
+
+fun <> = main() {
+  char greeting[14] : "hello, sailor"
+  char other[14] : "hello, sailor"
+  char different[6] : "hello"
+
+  ? "extent of the array " len(greeting)
+  ? "length of the text  " text_length(greeting)
+  ? "how many l          " text_count(greeting, 108)
+  ? "fraction that are l " text_fraction(greeting, 108)
+
+  // Shalimar's `=` on two char[] compares addresses rather than text, which
+  // is why the library carries a comparison at all.
+  ? "same as other       " text_same(greeting, other)
+  ? "same as different   " text_same(greeting, different)
+
+  text_upper(greeting)
+  ? "upper-cased         " greeting
+}

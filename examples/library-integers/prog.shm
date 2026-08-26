@@ -1,0 +1,33 @@
+// Integers across the boundary: scalars, an int[], and a rank-2 int[][].
+//
+// Nothing here is a real. The boundary is not a floating-point one - `int` in
+// Shalimar is 32 bits and matches C's `int` on all three targets, and an
+// int[] is a handle read with shm_get_int instead of shm_get_real.
+//
+// Library: Compiler-C/examples/shalimar-library (tally.c). Build it there.
+
+uses <int> = tally_gcd(a: int, b: int)
+uses <int> = tally_sum(a[]: int)
+uses <int> = tally_count_over(a[]: int, threshold: int)
+uses <> = tally_sort(a[]: int)
+uses <int> = tally_diagonal(m[][]: int)
+
+fun <> = main() {
+  int v[7] : { 9, 3, 7, 1, 8, 2, 6 }
+  int m[3][3] : { {1, 2, 3}, {4, 5, 6}, {7, 8, 9} }
+  int i : 0
+
+  ? "gcd of 84 and 36  " tally_gcd(84, 36)
+  ? "sum               " tally_sum(v)
+  ? "how many over 5   " tally_count_over(v, 5)
+  ? "diagonal of m     " tally_diagonal(m)
+
+  // Written through: Shalimar passes an array by reference, so the sort the
+  // C did is visible here afterwards.
+  tally_sort(v)
+  ? "after sorting     "
+  for i : 0 to 6 {
+    ?? v[i]
+  }
+  ?
+}

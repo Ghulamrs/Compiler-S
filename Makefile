@@ -79,6 +79,11 @@ DEPENDS := $(OBJECTS:.o=.d) $(RUNTIME_OBJECTS:.o=.d) $(DEBUG_RUNTIME_OBJECTS:.o=
 # workspace build names one directory instead, and all three programs are
 # built into it rather than collected afterwards.
 BINDIR ?= .
+
+# Named by workspace.mk so the examples and ABI suites can find cc1 and the
+# example library; each falls back to a sibling checkout on its own.
+CC1 ?= ../Compiler-C/cc1.exe
+LIBDIR ?= ../Compiler-C/examples/shalimar-library
 SHC    ?= $(BINDIR)/shc.exe
 
 # **The runtime goes wherever the compiler goes, and that is not a preference.**
@@ -124,7 +129,7 @@ test: all
 # of the twelve stopped compiling when `uses` landed and nothing said so. They
 # are documentation people are pointed at, so a broken one is worse than a
 # broken case.
-	SHC="$(abspath $(SHC))" ./tests/examples.sh
+	SHC="$(abspath $(SHC))" CC1="$(CC1)" LIBDIR="$(LIBDIR)" ./tests/examples.sh
 # The array ABI. Not a language check: it asks whether a C compiler can still
 # read runtime/shmrt.h, whether the runtime still exports what
 # docs/ARRAY-ABI.md names, and whether the two still link and agree. cc1 does
