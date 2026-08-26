@@ -19,7 +19,14 @@ CXXFLAGS ?= -std=c++14 -Wall -Wextra -Werror -pedantic -O2
 # happened here once and cost an hour chasing a sanitiser that had nothing to
 # find, because a clean rebuild is exactly what a sanitiser build is.
 DEPFLAGS := -MMD -MP
-BUILD    ?= obj
+# Objects are built OUTSIDE the checkout, in a build directory beside the four
+# projects: ../build/Compiler-S/obj. Nothing intermediate is ever written next
+# to the sources, so `tar` on this repository carries source and nothing else,
+# and a clean is a directory removal that cannot reach a tracked file.
+#
+# Overridable, and `?=` on purpose: workspace.mk names one place for all four,
+# and a command line beats both.
+BUILD    ?= ../build/Compiler-S/obj
 
 HOST := $(shell uname -s)
 ifeq ($(HOST),Darwin)
