@@ -13,3 +13,7 @@ tests/out/
 tests/out-examples/
 tests/out-abi/
 tests/out-foreign/
+
+# The library examples' built programs.
+examples/*/prog
+examples/*/prog.exe
