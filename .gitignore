@@ -11,3 +11,4 @@ tests/out/
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcworkspace/
 tests/out-examples/
+tests/out-abi/

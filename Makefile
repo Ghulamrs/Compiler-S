@@ -125,9 +125,15 @@ test: all
 # are documentation people are pointed at, so a broken one is worse than a
 # broken case.
 	SHC="$(abspath $(SHC))" ./tests/examples.sh
+# The array ABI. Not a language check: it asks whether a C compiler can still
+# read runtime/shmrt.h, whether the runtime still exports what
+# docs/ARRAY-ABI.md names, and whether the two still link and agree. cc1 does
+# the compiling where it is there, because it is stricter than the host's and
+# it is the compiler a user of these tools already has.
+	SHC="$(abspath $(SHC))" ./tests/abi.sh
 
 clean:
 	rm -rf $(BUILD) $(SHC) $(LIBDIR)
-	rm -rf tests/out tests/out-examples
+	rm -rf tests/out tests/out-examples tests/out-abi
 
 .PHONY: all test clean
