@@ -124,6 +124,30 @@ relayed tree that never updated, will both report success.
 | Linux box | `ssh -i ~/Documents/Claude/myMorningWalk.pem ec2-user@52.202.164.123` | real g++, `x86_64-linux` natively |
 | Windows box | `ssh windows` | `ml64` and `link`, `x86_64-windows` natively |
 
-The Windows shell is PowerShell, `git` is not on its `PATH`, and nested
-quotes mangle - the far side runs a `.bat` under `cmd`, which is the only
-shape that has never surprised.
+**The Windows ssh shell is `cmd`**, since that box was rebuilt on 2026-08-25.
+It was PowerShell before, and both remote scripts assumed so. `git` is not on
+its `PATH` either way, and nested quotes still mangle, so the far side runs a
+`.bat` - but **named by its full path and nothing else**:
+
+```
+ssh windows "C:\shalimar\build.bat sort"          # runs under either shell
+ssh windows "cmd /c C:\shalimar\build.bat sort"   # nests cmd in cmd
+ssh windows "cd DIR; cmd /c build.bat"             # ';' is not a cmd separator
+```
+
+The second nests `cmd` inside `cmd` and a quote leaks into the batch file's
+`%1` - `build.bat sort` arrives as `sort"`, which fails the first `if` in the
+script. That read as 57 compiler failures and was a shell quoting fault. The
+third silently did nothing at all.
+
+The scaffold those scripts drive - `tests/windows/*.bat` - is **in this
+repository**, and is copied over on every run. It used to live only on the box,
+so the rebuild took it and the suite then failed with `remote mkdir: No such
+file or directory`, which reads as a network fault. A freshly installed box now
+needs nothing done to it by hand.
+
+**The four projects are siblings under `~/source` on that box** - `RStudio`,
+`Compiler-C`, `Compiler-S`, `Converter-C2S` - because `RStudio.sln` names
+`..\Compiler-C\msvc\cc1.vcxproj`. Build into that tree and no other: a second
+copy elsewhere ages apart from the one every other tool there reads, and then
+passes.
