@@ -115,6 +115,7 @@ private:
     static bool alwaysReturns(const Block &body);
 
     bool refuseConstant(const std::string &name, const char *what);
+    bool refuseBorrowed(const std::string &name, int line);
 
 };
 

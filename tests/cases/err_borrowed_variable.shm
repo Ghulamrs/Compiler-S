@@ -1,0 +1,16 @@
+// Rule 3: a borrowed name may not also be a variable. `fmod` is an ordinary
+// identifier in every file that does not borrow it; in one that does, the
+// name is spoken for, and `real fmod` beside a call to `fmod` would be one
+// name meaning two things in one file - the hazard the language already
+// named when it refused `pi : 3`.
+//
+// Stricter than a constant, which may be had by declaring it. There is no
+// declaring your way out of a borrow: the clause has claimed the name for
+// the whole file, so the cure is at one line or the other, and the message
+// names both.
+uses fmod
+
+fun <> = main() {
+  real fmod : 2.5
+  ? fmod
+}

@@ -1,0 +1,14 @@
+// The other half of rule 3, and the whole point of asking: a file that does
+// not borrow the name may use it for whatever it likes. `uses` reserves
+// nothing. If this ever starts failing, the rule has stopped being about
+// borrowing and become a reserved-word list, which is the trade `uses` was
+// built to avoid.
+fun <> = main() {
+  real fmod : 2.5
+  int sqrt : 4
+  ? fmod sqrt
+
+  for hypot : 1 to 2 {
+    ? hypot
+  }
+}

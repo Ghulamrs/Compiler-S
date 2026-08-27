@@ -172,8 +172,11 @@ bool Resolver::resolve(Unit &main, std::vector<Unit> &others) {
         // walk and buy nothing.
         for (std::size_t b = 0; b < from.program->borrowed().size(); ++b) {
             const Program::Borrowed &borrow = from.program->borrowed()[b];
+            // `false`: not the main file's own borrow. It makes the name callable,
+            // which is the point, but it must not take the name away from a variable
+            // in a file that never asked for it - FOREIGN.md rule 3 is per file.
             if (!main.program->borrows(borrow.name))
-                main.program->borrow(borrow.name, borrow.line);
+                main.program->borrow(borrow.name, borrow.line, false);
         }
 
         Names calls;

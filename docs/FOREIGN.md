@@ -121,8 +121,25 @@ uses fmod
 
 **3. A borrowed name is an ordinary name until borrowed.** `uses` does not
 reserve anything. A file that does not borrow `fmod` may use `fmod` for a
-variable, and a file that borrows it may not — the same rule a function name
-already follows.
+variable, and a file that borrows it may not.
+
+*Corrected 2026-08-27, when this was built.* This rule used to end "— the same
+rule a function name already follows", and **there is no such rule**: both
+implementations accept `int f : 2` in a file that also defines `fun <int> =
+f()`, and did on the day that sentence was written. So a borrowed name is
+*stricter* than the program's own function names, not equal to them.
+
+The reason that stands on its own is the one the language already used for
+`pi`: a file that borrows `fmod` and also declares `real fmod` has one name
+meaning two things in one file, and `fmod(7.5, 2.0)` beside `fmod : 2.5` cannot
+be read twice the same way. It is also stricter than a *constant*, which may be
+had by declaring it — there is no declaring your way out of a borrow, because
+the clause has already claimed the name for the file.
+
+**Per file, like the clause.** `Resolve` merges the borrows of any file it
+pulls a function from, so that file's own calls resolve; those merged borrows
+must not take a name away from a variable in a file that never asked. That is
+what `own` on `Program::Borrowed` is for.
 
 **4. Borrowing something never called is not an error.** It costs nothing, no
 code is emitted for it, and a file that borrows a set for a project it is part

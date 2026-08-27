@@ -1,0 +1,15 @@
+// This file never borrows anything, so `fmod` is an ordinary name here and it
+// uses it for a variable - while calling a function from borrows.shl, which
+// does borrow it.
+//
+// Resolve merges a pulled file's borrows into this program so that the pulled
+// function's own calls resolve. If rule 3 were keyed on that merged list, this
+// program would be refused for a clause it never wrote - and the app, which has
+// one file and no merging, would disagree about which programs are legal. The
+// `own` flag on Program::Borrowed is what keeps the two apart, and this is what
+// says so.
+fun <> = main() {
+  real fmod : 99.5
+  ? fmod
+  ? wrapped(7.5, 2.0)
+}

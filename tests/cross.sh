@@ -73,6 +73,12 @@ fun <> = main() {
 SHM
 run "another program beside it is not a clash" "$WORK/together.shl" "12.0000000"
 
+# Rule 3 is per FILE, like the clause it enforces. Resolve merges a pulled
+# file's borrows so that file's own calls resolve; keying the rule on the
+# merged list would refuse this program for a `uses` it never wrote.
+run "a borrow elsewhere leaves the name free here" "$WORK/keepsname.shl" "99.5000000"
+run "and the borrowed call still works over there" "$WORK/keepsname.shl" "1.5000000"
+
 # Two files answering to a name something wants is refused, naming both.
 cat > "$WORK/rival.shl" <<'SHM'
 fun <real> = area(w: real, h: real) {

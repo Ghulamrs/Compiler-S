@@ -1,0 +1,8 @@
+// A library that borrows. Rule 3 takes `fmod` away from a variable IN THIS
+// FILE, and must not reach into a file that merely calls into it: `uses` is
+// per file, exactly as the globals a pulled function reads are.
+uses fmod
+
+fun <real> = wrapped(a: real, b: real) {
+  return fmod(a, b)
+}

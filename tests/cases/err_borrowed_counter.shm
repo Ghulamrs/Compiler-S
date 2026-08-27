@@ -1,0 +1,14 @@
+// The same rule at a different door. Six places introduce a name - a
+// declaration, a global, a parameter, an assignment, a loop counter and a
+// multi-assign target - and a guard on five of them is a rule with a hole.
+//
+// The clause sits BELOW the loop on purpose: `uses` is per file, not per
+// line, and the parser has collected every borrow before the checker starts.
+// So the position of the clause cannot matter, and this is what says so.
+fun <> = main() {
+  for fmod : 1 to 2 {
+    ? fmod
+  }
+}
+
+uses fmod
