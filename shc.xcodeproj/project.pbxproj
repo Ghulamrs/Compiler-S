@@ -155,6 +155,8 @@
 			buildPhases = (
 				BD4C6827C61291C154A37A4E /* Sources */,
 				F1434D65F73204F06783AF71 /* Frameworks */,
+				354B0E560DCA61DDAC8D549B /* the Shalimar runtime, beside shc.exe */,
+				427C545DCD8E02DD5A40E0F4 /* put the finished program in RStudio's directory */,
 			);
 			buildRules = (
 			);
@@ -190,6 +192,51 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		354B0E560DCA61DDAC8D549B /* the Shalimar runtime, beside shc.exe */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/runtime/Shortest.cpp",
+				"$(SRCROOT)/runtime/Failure.cpp",
+				"$(SRCROOT)/runtime/Numbers.cpp",
+				"$(SRCROOT)/runtime/Array.cpp",
+				"$(SRCROOT)/runtime/Console.cpp",
+				"$(SRCROOT)/runtime/Runtime.cpp",
+				"$(SRCROOT)/runtime/Debug.cpp",
+				"$(SRCROOT)/runtime/shmrt.h",
+				"$(SRCROOT)/runtime/Internal.h",
+				"$(SRCROOT)/runtime/Shortest.h",
+				"$(SRCROOT)/runtime/Debug.h",
+			);
+			name = "the Shalimar runtime, beside shc.exe";
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/lib/shmrt-arm64-darwin.a",
+				"$(BUILT_PRODUCTS_DIR)/lib/shmrt-arm64-darwin-debug.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\ncxx=\"$(xcrun --find clang++)\"\nar=\"$(xcrun --find ar)\"\nflags=\"-std=c++14 -Wall -Wextra -Werror -pedantic -O2\"\nlib=\"$BUILT_PRODUCTS_DIR/lib\"\nmkdir -p \"$lib\"\nmkdir -p \"$DERIVED_FILE_DIR/runtime\"\n\"$cxx\" $flags -c \"$SRCROOT/runtime/Shortest.cpp\" -o \"$DERIVED_FILE_DIR/runtime/Shortest.o\"\n\"$cxx\" $flags -c \"$SRCROOT/runtime/Failure.cpp\" -o \"$DERIVED_FILE_DIR/runtime/Failure.o\"\n\"$cxx\" $flags -c \"$SRCROOT/runtime/Numbers.cpp\" -o \"$DERIVED_FILE_DIR/runtime/Numbers.o\"\n\"$cxx\" $flags -c \"$SRCROOT/runtime/Array.cpp\" -o \"$DERIVED_FILE_DIR/runtime/Array.o\"\n\"$cxx\" $flags -c \"$SRCROOT/runtime/Console.cpp\" -o \"$DERIVED_FILE_DIR/runtime/Console.o\"\n\"$cxx\" $flags -c \"$SRCROOT/runtime/Runtime.cpp\" -o \"$DERIVED_FILE_DIR/runtime/Runtime.o\"\nrm -f \"$lib/shmrt-arm64-darwin.a\"\n\"$ar\" rcs \"$lib/shmrt-arm64-darwin.a\" \"$DERIVED_FILE_DIR/runtime\"/*.o\nmkdir -p \"$DERIVED_FILE_DIR/runtime-debug\"\n\"$cxx\" $flags -DSHM_DEBUG=1 -c \"$SRCROOT/runtime/Shortest.cpp\" -o \"$DERIVED_FILE_DIR/runtime-debug/Shortest.o\"\n\"$cxx\" $flags -DSHM_DEBUG=1 -c \"$SRCROOT/runtime/Failure.cpp\" -o \"$DERIVED_FILE_DIR/runtime-debug/Failure.o\"\n\"$cxx\" $flags -DSHM_DEBUG=1 -c \"$SRCROOT/runtime/Numbers.cpp\" -o \"$DERIVED_FILE_DIR/runtime-debug/Numbers.o\"\n\"$cxx\" $flags -DSHM_DEBUG=1 -c \"$SRCROOT/runtime/Array.cpp\" -o \"$DERIVED_FILE_DIR/runtime-debug/Array.o\"\n\"$cxx\" $flags -DSHM_DEBUG=1 -c \"$SRCROOT/runtime/Console.cpp\" -o \"$DERIVED_FILE_DIR/runtime-debug/Console.o\"\n\"$cxx\" $flags -DSHM_DEBUG=1 -c \"$SRCROOT/runtime/Runtime.cpp\" -o \"$DERIVED_FILE_DIR/runtime-debug/Runtime.o\"\n\"$cxx\" $flags -DSHM_DEBUG=1 -c \"$SRCROOT/runtime/Debug.cpp\" -o \"$DERIVED_FILE_DIR/runtime-debug/Debug.o\"\nrm -f \"$lib/shmrt-arm64-darwin-debug.a\"\n\"$ar\" rcs \"$lib/shmrt-arm64-darwin-debug.a\" \"$DERIVED_FILE_DIR/runtime-debug\"/*.o\n";
+		};
+		427C545DCD8E02DD5A40E0F4 /* put the finished program in RStudio's directory */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "put the finished program in RStudio's directory";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\ndest=\"$SRCROOT/../RStudio\"\nmkdir -p \"$dest\"\ncp -f \"$BUILT_PRODUCTS_DIR/$PRODUCT_NAME\" \"$dest/.$PRODUCT_NAME.new\"\nmv -f \"$dest/.$PRODUCT_NAME.new\" \"$dest/$PRODUCT_NAME\"\ncodesign --force --sign - \"$dest/$PRODUCT_NAME\"\nmkdir -p \"$dest/lib\"\ncp -f \"$BUILT_PRODUCTS_DIR\"/lib/*.a \"$dest/lib/\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		BD4C6827C61291C154A37A4E /* Sources */ = {
