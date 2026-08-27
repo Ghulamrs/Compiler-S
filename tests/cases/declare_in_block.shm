@@ -1,0 +1,33 @@
+// A declaration goes wherever a statement goes. The rule was "top of the
+// function, never inside an if or a loop", refused in the parser, and it went
+// so that a C program keeps its shape when it is converted rather than having
+// every local hoisted to the top of main().
+//
+// Three placements the old rule refused, in one program: inside an `if`,
+// inside a loop body, and halfway down a function after the work has started.
+// The loop one is the interesting placement - the declaration is reached once
+// per pass, so it re-runs its initializer rather than being hoisted.
+uses len
+
+fun <int> = sum(v[]: int) {
+  int total : 0
+  for i < len(v) {
+    int t : v[i] * 2
+    total +: t
+  }
+  return total
+}
+
+fun <> = main() {
+  int a : 1
+  ? a
+
+  int v[3] : {1, 2, 3}
+  ? sum(v)
+
+  if a > 0 {
+    real half : 0.5
+    ? half
+  }
+  return
+}

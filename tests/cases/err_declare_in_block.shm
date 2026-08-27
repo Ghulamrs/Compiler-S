@@ -1,3 +1,0 @@
-fun <> = main() {
-  if 1 { int k : 2 }
-}

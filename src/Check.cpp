@@ -196,6 +196,7 @@ void Checker::check(Function &function) {
     unit_ = function.proto().unit;
     scope_.clear();
     scope_.push();
+    declaredLocals_.clear();
 
     for (const Param &parameter : function.proto().inputs) {
         Symbol *symbol = function.declare(parameter.name, parameter.type);
@@ -558,9 +559,23 @@ void Checker::visit(Call &node) {
 }
 
 void Checker::visit(Declare &node) {
-    if (scope_.definedHere(node.name()) || (inGlobalScope_ && globals_.count(node.name()))) {
+    // `lookup` rather than `definedHere` for a local: a declaration may sit inside a
+    // block now, and a declared local lives for the whole call, so one inside an `if`
+    // may not shadow one outside it. `declaredLocals_` answers the other half - two
+    // SIBLING blocks each declaring 't', whose scopes never exist at the same moment
+    // for `scope_` to compare.
+    const bool taken =
+        inGlobalScope_ ? (scope_.definedHere(node.name()) || globals_.count(node.name()) != 0)
+                       : (scope_.lookup(node.name()) != 0 ||
+                          declaredLocals_.count(node.name()) != 0);
+    if (taken) {
         diag_.error(unit_, line_, "Variable '" + node.name() + "' already defined");
-        return;
+        // Reported, and then this carries on and declares the name anyway. Returning
+        // here left the name undefined, so every later mention of it drew a second
+        // "Undefined variable" - one mistake, two messages, and the reader is sent
+        // looking at the wrong line. The app's interpreter reports the redeclaration
+        // alone, and the differential suite caught the difference the moment a case
+        // used the name after declaring it twice.
     }
 
     const Type *type = node.declaredType();
@@ -605,7 +620,11 @@ void Checker::visit(Declare &node) {
 
     Symbol *symbol = declareName(node.name(), type);
     if (!inGlobalScope_) {
+        // Into the innermost level, which is what ends the name's VISIBILITY with its
+        // block - the rule a name made by a first assignment already follows. The
+        // lifetime is a separate question and unchanged: the slot is the frame's.
         scope_.define(node.name(), symbol);
+        declaredLocals_.insert(node.name());
 
         if (globals_.count(node.name())) {
             diag_.warning(unit_, line_, "'" + node.name() + "' hides a global");

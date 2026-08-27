@@ -1,0 +1,17 @@
+// A declared name reaches the end of its block and no further - the same rule
+// a name made by a first assignment has always followed. Lifetime and
+// visibility are different questions: the slot is the frame's for the whole
+// call, and the name is the block's.
+//
+// Visibility ending with the block is what keeps the checker and the run in
+// step. The app's interpreter drops its box at the end of the block too, so a
+// checker that allowed this read would pass a program the run then failed.
+fun <> = main() {
+  int x : 5
+  if x > 0 {
+    int t : 3
+    ? t
+  }
+  ? t
+  return
+}

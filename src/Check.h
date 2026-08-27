@@ -5,6 +5,7 @@
 #include "Diag.h"
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -81,6 +82,15 @@ private:
     std::map<std::string, const Symbol *> globals_;
     std::map<std::string, int> laterGlobals_;
     bool inGlobalScope_ = false;
+
+    // Every name the function being checked has DECLARED, at any depth, kept for the
+    // whole function rather than popped with its block. A declaration may sit in a
+    // block now, but a declared local is still the whole call's - one name, one
+    // variable, one type - so two sibling blocks may not each declare 't'. `scope_`
+    // cannot answer that: the first block's level is popped long before the second is
+    // read. Names made by a first assignment are NOT in here; those belong to their
+    // block and always have.
+    std::set<std::string> declaredLocals_;
 
     Symbol *declareName(const std::string &name, const Type *type);
     const Symbol *lookup(const std::string &name) const;

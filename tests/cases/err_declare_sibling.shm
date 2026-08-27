@@ -1,0 +1,20 @@
+// One call has one 't'. A declared local's lifetime is the whole call - that
+// is what did NOT change when the placement rule went - so two sibling blocks
+// may not each declare the same name. A block-scoped language would make
+// these two different variables; this one does not.
+//
+// The scope stack alone cannot catch this: the first block's level is popped
+// long before the second is read. The checker remembers every name the
+// function has declared, separately from the scopes.
+fun <> = main() {
+  int x : 5
+  if x > 0 {
+    int t : 1
+    ? t
+  }
+  if x > 1 {
+    int t : 2
+    ? t
+  }
+  return
+}

@@ -1,0 +1,12 @@
+// The other half of one-name-one-variable: a declaration inside a block may
+// not shadow one the surrounding block already made. This is the case the
+// scope stack CAN see, and it is why the check asks `lookup` rather than
+// `definedHere` - the outer level is still open when the inner one is read.
+fun <> = main() {
+  int t : 1
+  if t > 0 {
+    int t : 2
+    ? t
+  }
+  return
+}
