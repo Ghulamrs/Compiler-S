@@ -231,3 +231,72 @@ and `^` operators still use. If those ever move, nothing in the archive would
 pull libm in and the flag becomes the only thing that does. It is a no-op on a
 Mac and on glibc 2.34 and later, and the difference between linking and not on
 anything older.
+
+## What else the boundary admits — measured, 2026-08-27
+
+This document has said "forty library functions" three times as a way of saying
+"more than twenty". Here is the actual number, arrived at rather than guessed.
+
+**The rule is unchanged and does all the work.** A function can be borrowed when
+its C signature can be written in `int`, `real`, `char` and arrays of them.
+Nothing below is a policy decision; each name either fits that sentence or does
+not.
+
+**Twenty-seven rows exist today.** Thirty-three more fit the rule *and link*, so
+the plausible ceiling is about sixty. Grouped by C signature shape, because that
+is what decides admission — not which header a function came from:
+
+| shape | count | names |
+| --- | --- | --- |
+| `double -> double` | 13 | `asinh acosh atanh exp2 expm1 log1p erf erfc tgamma lgamma nearbyint rint logb` |
+| `(double, double) -> double` | 6 | `remainder copysign fdim fmax fmin nextafter` |
+| `(double, int) -> double` | 2 | `ldexp scalbn` |
+| `int -> int` | 11 | `isalnum isalpha isdigit islower isupper isspace ispunct isxdigit toupper tolower labs` |
+| `void -> int` | 1 | `rand` |
+
+**This is a candidate list, not a promise.** Nothing here is available to a
+program until it is a row in `src/Builtin.cpp`; `uses asinh` is refused today,
+and correctly. The list exists so that adding one is a decision about whether
+it is wanted, rather than a fresh investigation into whether it is possible.
+
+### Six that would cost a day each
+
+**`fmax` and `fmin` link, and must not be borrowed as `max` and `min`.** Shalimar's
+are `a > b ? a : b`, which propagates NaN; `fmax` returns the non-NaN operand.
+Measured: `max(1., nan)` is `nan` one way and `1.0` the other. They can only be
+added under their own names, which is a different decision from adding a row.
+
+**`signbit` and `isfinite` cannot be borrowed at all** — they are macros, and
+neither links. This is the one class the type rule does not catch: they read
+exactly like functions and their signatures fit. `isnan` and `isinf` happen to
+link on this Mac, but they are macros in C99 too, so that symbol is a platform
+extension rather than something to build a row on.
+
+**`srand` returns `void`**, and a borrowed function answers exactly one value, so
+it cannot be borrowed. Which means `rand` could be added but never seeded, and
+every program would get the same sequence. Worth deciding before adding `rand`,
+not after.
+
+**`<ctype.h>`'s domain is `unsigned char` or `EOF`, not `char`.** A Shalimar `char`
+reaching one of these needs `int(c)` at the call site, and a negative value is
+undefined in C. Eleven easy rows and one paragraph of documentation that has to
+be right.
+
+**Every `float` and `long double` variant is out**, for the plainest reason in the
+language: there is no `float`. That is most of what makes libm look large.
+
+**`(double, int)` has no row shape yet.** `ldexp` and `scalbn` fit the type rule
+but not the table, which carries one arity and one kind. They are a change to
+`Builtin.h`, not two rows in `Builtin.cpp`.
+
+### How the list was arrived at
+
+The twenty-seven were read out of `src/Builtin.cpp` rather than remembered, so
+this page cannot drift from the table the compiler actually asks.
+
+Each of the thirty-three was written into a one-line C program, compiled, and
+**linked**. A name that does not link cannot be borrowed however well its
+signature reads — which is exactly how `signbit` and `isfinite` were caught.
+
+The ceiling is an estimate in one direction only: more of libm may fit than was
+checked here, but nothing listed as fitting was assumed to.
